@@ -214,3 +214,16 @@ test('mode développeur : « Marquer comme à mettre à jour » remet la pastill
   assert.equal((await api('GET', `/api/pages/${d.id}`)).body.children.find((k) => k.id === c.id).legacy, true, 'pastille dans les vues');
   await api('POST', `/api/pages/${c.id}/modernize/mark`); assert.equal((await api('GET', `/api/pages/${c.id}/modernize`)).body.legacy, false);
 });
+
+test('architecture de référence : l\'espace (bloc de texte vide) entre deux listes dépliantes est conservé', async () => {
+  const { captureReference, rebuildFromReference } = await import('../server/templates.js');
+  const rt = (t) => (t ? [{ type: 'text', text: { content: t, link: null }, plain_text: t, annotations: {} }] : []);
+  const B = (id, type, content = {}, parent = null) => ({ id, parent_id: parent, type, content });
+  const ref = [B('1', 'toggle', { rich_text: rt('Émanant') }), B('2', 'paragraph', { rich_text: [] }, '1'), B('3', 'paragraph', { rich_text: [] }), B('4', 'toggle', { rich_text: rt('Lié') }), B('5', 'paragraph', { rich_text: rt('texte du cours') })];
+  const tree = captureReference(ref);
+  assert.deepEqual(tree.map((n) => n.type), ['toggle', 'paragraph', 'toggle']); // l'espace du milieu est gardé, le texte du cours non
+  const out = rebuildFromReference(tree, [B('a', 'toggle', { rich_text: rt('Émanant') }), B('b', 'paragraph', { rich_text: rt('contenu') }, 'a')]);
+  const roots = out.filter((b) => !b.parent_id).map((b) => b.type);
+  assert.deepEqual(roots, ['toggle', 'paragraph', 'toggle']);
+  assert.ok(out.some((b) => b.type === 'paragraph' && b.parent_id && JSON.stringify(b.content).includes('contenu'))); // le contenu de l'ancienne page est recasé dans le toggle
+});

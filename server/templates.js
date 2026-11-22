@@ -53,7 +53,14 @@ const emptyText = (n) => !textOf(n.b.content).trim() && !['divider', 'button', '
 /** Squelette d'une page : on garde la structure (titres, blocs déroulants, séparateurs, encadrés, boutons, panneau de fichiers), pas le texte du cours. */
 export function captureReference(list) {
   const kids = (id) => list.filter((b) => (b.parent_id || null) === id);
-  const walk = (id) => kids(id).filter((b) => STRUCT.has(b.type)).map((b) => ({ type: b.type, content: b.content || {}, children: walk(b.id) }));
+  // Les blocs de texte VIDES font partie de la mise en page (espace entre deux listes dépliantes, etc.) : on les garde à la racine, et dans un bloc
+  // seulement s'ils séparent deux éléments de structure (un vide en fin de bloc est le futur emplacement du contenu : il est recréé à la mise à jour).
+  const spacer = (b) => b.type === 'paragraph' && !textOf(b.content || {}).trim();
+  const walk = (id) => {
+    const sibs = kids(id);
+    return sibs.filter((b, i) => STRUCT.has(b.type) || (spacer(b) && (id === null || sibs.slice(i + 1).some((x) => STRUCT.has(x.type)))))
+      .map((b) => ({ type: b.type, content: b.content || {}, children: walk(b.id) }));
+  };
   return walk(null);
 }
 const treeOf = (list) => {

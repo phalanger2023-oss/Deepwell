@@ -26,6 +26,7 @@ export const RELEASES = [
       'Icône de l’onglet du navigateur : celle de la page affichée ; sans icône de page, l’icône du site choisie dans Réglages → Apparence ; sinon l’icône par défaut.',
     ],
     ameliorations: [
+      'Architecture de référence : les blocs de texte vides qui servent d’espace (par exemple entre deux listes dépliantes) sont désormais conservés quand on met à jour une page. À refaire une fois : « Définir comme architecture de référence » sur ta page modèle.',
       'Titres de pages et de lignes de base de données : on peut maintenant y insérer des mentions avec « @ » (dates, pages), comme dans le texte.',
       'Verrouillage par code : la page se verrouille tout de suite après avoir défini le code (il faut le saisir pour la rouvrir). Une page protégée mais ouverte affiche une pastille « Déverrouillée · verrouiller » sous le titre (et un cadenas ouvert dans la liste de gauche) ; un clic la reverrouille.',
       'Bouton « Retour » du navigateur : en aperçu latéral, il ferme l’aperçu au lieu de quitter la base (Échap et la croix ne laissent pas d’entrée d’historique).',
