@@ -12,6 +12,7 @@ export const RELEASES = [
       'Mode développeur : clic droit sur la pastille → « Marquer comme modifiée » (retire pastille et bouton sans toucher à la page).',
       'Bloc « Fichiers du chapitre » : le panneau d’ajout de fichiers est maintenant un bloc déplaçable où tu veux dans la page (menu « / » → « Fichiers du chapitre »). Sur les pages existantes, le bouton « Placer dans la page » l’insère ; les nouvelles fiches P.S.A. l’ont d’office sous la ligne de date.',
       'Architecture de référence : en mode développeur, menu « ⋯ » d’une page → « Définir comme architecture de référence » (à faire sur ta fiche P.S.A. #0001-26-MTH). « Mettre à jour cette page » reconstruit ensuite les anciennes pages sur cette structure : ton contenu est recasé sous les sections du même nom (Cours, Addenda, Émanant du P.S.A.…), le reste est conservé sous « À classer ».',
+      'L’architecture de référence devient aussi le modèle par défaut des prochaines cartes de la base (« Architecture de référence », date du jour dans l’encadré, sections vides). Redéfinir la référence remplace ce modèle.',
       'La pastille jaune apparaît aussi directement dans les vues de la base scolaire (tableau, Kanban, galerie, liste, calendrier), sur chaque ancienne page.',
       'Icône de l’onglet du navigateur : celle de la page affichée ; sans icône de page, l’icône du site choisie dans Réglages → Apparence ; sinon l’icône par défaut.',
     ],

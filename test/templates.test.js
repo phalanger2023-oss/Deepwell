@@ -177,7 +177,13 @@ test('architecture de référence : capture réservée au mode développeur, rec
   await api('PUT', `/api/pages/${ref.id}/blocks`, { blocks: [T('heading_1', 'Cours', 'r1'), T('paragraph', 'texte du modèle', 'r1p'), T('divider', '', 'r2'), T('heading_1', 'Addenda', 'r3'), T('toggle', 'Émanant du P.S.A.', 'r4'), { id: 'r5', parent_id: 'r4', type: 'button', content: { label: 'Nouvel addendum', actions: [{ type: 'add_subpage', title: 'x', text: '', where: 'below' }] } }, T('toggle', 'Lié à la P.S.A.', 'r6')] });
   assert.equal((await api('POST', `/api/pages/${ref.id}/arch-reference`)).status, 403, 'réservé au mode développeur');
   DB.setSetting('dev_mode', '1');
-  const cap = (await api('POST', `/api/pages/${ref.id}/arch-reference`)).body; assert.equal(cap.ok, true);
+  const cap = (await api('POST', `/api/pages/${ref.id}/arch-reference`)).body; assert.equal(cap.ok, true, JSON.stringify(cap));
+  const dbp = (await api('GET', `/api/pages/${d.id}`)).body.page; assert.equal(dbp.props.dw_default_template, cap.template_id, 'devient le modèle par défaut');
+  const nc = (await api('POST', `/api/pages/${d.id}/from-template/${cap.template_id}`, { title: 'Nouvelle carte' })).body;
+  const nb = (await api('GET', `/api/pages/${nc.id}`)).body.blocks, ntxt = (b) => (b.content.rich_text || []).map((x) => x.plain_text).join('');
+  assert.ok(nb.some((b) => ntxt(b) === 'Émanant du P.S.A.') && !nb.some((b) => ntxt(b) === 'texte du modèle'), 'nouvelle carte = structure de la référence, sans son texte');
+  const cap2 = (await api('POST', `/api/pages/${ref.id}/arch-reference`)).body;
+  assert.equal((await api('GET', `/api/pages/${d.id}/templates`)).body.filter((t) => t.title === 'Architecture de référence').length, 1, 'un seul modèle de référence, remplacé à chaque définition'); assert.notEqual(cap2.template_id, cap.template_id);
   await api('PUT', `/api/pages/${old.id}/blocks`, { blocks: [T('paragraph', 'Note orpheline', 'xz'), T('heading_1', 'Cours :', 'xa'), T('heading_2', 'Original :', 'xb', null, { is_toggleable: true }), T('paragraph', 'ancien texte', 'xbp', 'xb'), T('paragraph', 'Mon cours important', 'xc'), T('heading_1', 'Addenda :', 'xf'), T('toggle', 'Émanant du P.S.A.', 'xg'), T('paragraph', 'addendum perdu', 'xgp', 'xg')] });
   const plan = (await api('POST', `/api/pages/${old.id}/modernize`, { dry: true })).body; assert.equal(plan.reference, 'P.S.A. #0001-26-MTH');
   const r = (await api('POST', `/api/pages/${old.id}/modernize`, { dry: false, remove: ['xb'] })).body; assert.equal(r.rebuilt, true);

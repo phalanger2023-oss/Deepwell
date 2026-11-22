@@ -197,13 +197,22 @@ export function templatesRoutes(router, { autoProps, defaultProps, schoolPageCha
     if (getSetting('dev_mode', '0') !== '1') throw err('Cette action nécessite le mode développeur (Réglages → Développeur).', 403);
     const p = db.prepare("SELECT id,parent_id,title FROM pages WHERE id=? AND kind='page'").get(req.params.id);
     if (!p || !p.parent_id || !can(accessFor(req.user, p.id), 'edit')) throw err('Page introuvable', 404);
-    const d = db.prepare("SELECT id,props FROM pages WHERE id=? AND kind='database'").get(p.parent_id);
+    const d = db.prepare("SELECT id,props,owner_id FROM pages WHERE id=? AND kind='database'").get(p.parent_id);
     if (!d || !parse(d.props, {})?.dw_school?.enabled || !can(accessFor(req.user, d.id), 'edit')) throw err('Cette page n’appartient pas à une base scolaire.', 409);
     const list = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(p.id).map((b) => ({ id: b.id, parent_id: b.parent_id, type: b.type, content: parse(b.content, {}) }));
     const tree = captureReference(list);
     if (!tree.length) throw err('Cette page n’a aucune structure (titres, blocs déroulants…) à utiliser comme référence.', 409);
-    db.prepare('UPDATE pages SET props=?, updated_at=? WHERE id=?').run(JSON.stringify({ ...parse(d.props, {}), dw_arch_ref: { title: p.title, tree, at: now() } }), now(), d.id);
-    res.json({ ok: true, blocks: list.length, kept: JSON.stringify(tree).split('"type"').length - 1 });
+    // L'architecture sert aussi de modèle par défaut pour les prochaines cartes (date du jour dans l'encadré, sections vides)
+    const skeleton = rebuildFromReference(tree, []).map((b) => (b.type === 'callout' && JSON.stringify(b.content).includes('"mention"')
+      ? { ...b, content: { ...b.content, rich_text: [mentionToday(), { type: 'text', text: { content: ' ', link: null }, plain_text: ' ', annotations: {} }] } } : b));
+    const dprops = parse(d.props, {}) || {}, prevTpl = dprops.dw_arch_ref?.template_id;
+    let tplId;
+    tx(() => {
+      if (prevTpl) db.prepare("UPDATE pages SET archived=1, updated_at=? WHERE id=? AND kind='template'").run(now(), prevTpl);
+      tplId = createTemplate(d, 'Architecture de référence', null, skeleton, {});
+      db.prepare('UPDATE pages SET props=?, updated_at=? WHERE id=?').run(JSON.stringify({ ...dprops, dw_arch_ref: { title: p.title, tree, at: now(), template_id: tplId }, dw_default_template: tplId }), now(), d.id);
+    });
+    res.json({ ok: true, blocks: list.length, kept: JSON.stringify(tree).split('"type"').length - 1, template_id: tplId });
   });
   /** Mode développeur : « Marquer comme modifiée » (retire la pastille et le bouton sans toucher au contenu). */
   router.post('/:id/modernize/mark', requireAuth, (req, res) => {
