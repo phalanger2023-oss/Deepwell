@@ -6,6 +6,17 @@
  */
 export const RELEASES = [
   {
+    version: '3.4.10', date: '2026-11-22',
+    nouveautes: [
+      'Google Drive : chaque addendum a maintenant son propre dossier « Addenda / <nom de la page> », qui contient ses fichiers joints et un petit résumé écrit (<nom>.md, texte seul, très léger). Le résumé se met à jour tout seul quand tu modifies la page, et le dossier suit le renommage.',
+      'Rétroactif : « Mettre à jour l’architecture… » range les addenda déjà existants (fichiers déjà envoyés déplacés dans le dossier de leur addendum, résumé créé). L’aperçu indique combien. Tous les futurs addenda sont traités automatiquement.',
+    ],
+    ameliorations: [
+      '« Tout télécharger » classe les fichiers d’addenda dans « Addenda/<nom de l’addendum> ».',
+    ],
+    corrections: [],
+  },
+  {
     version: '3.4.9', date: '2026-11-22',
     nouveautes: [
       'Kanban : clic droit (ou appui long au doigt) sur une carte → Ouvrir, Renommer, Déplacer vers une colonne, Supprimer.',

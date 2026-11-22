@@ -1,6 +1,6 @@
 {
   "name": "deepwell",
-  "version": "3.4.9",
+  "version": "3.4.10",
   "description": "Alternative auto-hébergée à Notion : pages, blocs, partage, backups, Google Drive, import Notion.",
   "type": "module",
   "private": true,

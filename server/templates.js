@@ -88,7 +88,7 @@ function resolveMentions(content, today) {
   return walk(content);
 }
 
-export function templatesRoutes(router, { autoProps, defaultProps, schoolPageChanged, writeBlocks, snapshot, schoolPdmBackfill }) {
+export function templatesRoutes(router, { autoProps, defaultProps, schoolPageChanged, writeBlocks, snapshot, schoolPdmBackfill, schoolAddendaBackfill }) {
   /**
    * « Mettre à jour l'architecture » d'une base scolaire (aperçu avec `dry`, sinon application) :
    *  1. retire les boutons sans aucune action (pages et modèles de la base) ;
@@ -151,6 +151,7 @@ export function templatesRoutes(router, { autoProps, defaultProps, schoolPageCha
       }
     }
     plan.tbd_column = key || null;
+    plan.addenda_drive = schoolAddendaBackfill(d.id, req.user.id, dry); // addenda : un dossier chacun + résumé écrit
     plan.pdm = schoolPdmBackfill(d.id, req.user.id, dry); // PDF déjà présents pas encore dans PDM : envoyés (en tâche de fond)
     res.json(plan);
   });

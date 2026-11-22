@@ -79,7 +79,7 @@ async function architectureDialog(page, { onDone } = {}) {
   const tbd = { set: `La matière « TBD » deviendra la valeur par défaut de la colonne « ${plan.tbd_column} » : toute nouvelle ligne y sera rangée, sauf si tu la crées depuis la colonne d’une matière.`,
     create: `L’option « TBD » sera ajoutée à la colonne « ${plan.tbd_column} » et deviendra sa valeur par défaut : toute nouvelle ligne y sera rangée, sauf si tu la crées depuis la colonne d’une matière.`,
     already: `La colonne « ${plan.tbd_column} » a déjà une valeur par défaut : elle est conservée (modifiable avec « Par défaut »).`, no_column: 'Pas de colonne « Matière » (Sélection ou Statut) : aucune matière par défaut.' }[plan.tbd];
-  const nothing = !plan.updated.length && !plan.removed_count && (plan.tbd === 'already' || plan.tbd === 'no_column') && !plan.pdm?.files;
+  const nothing = !plan.updated.length && !plan.removed_count && (plan.tbd === 'already' || plan.tbd === 'no_column') && !plan.pdm?.files && !plan.addenda_drive?.addenda;
   const status = h('div', { class: 'muted' });
   const go = h('button', { class: 'btn primary', disabled: nothing, onclick: start }, nothing ? 'Rien à mettre à jour' : 'Mettre à jour');
   const cancel = h('button', { class: 'btn', onclick: () => m.close() }, 'Fermer');
@@ -91,6 +91,7 @@ async function architectureDialog(page, { onDone } = {}) {
       plan.already.length ? h('li', {}, `${plural(plan.already.length, 'page a déjà', 'pages ont déjà')} un bouton de création de sous-page dans « Addenda » : pas touchée.`) : null, plan.already.length ? lst(plan.already) : null,
       plan.no_section.length ? h('li', {}, `${plural(plan.no_section.length, 'page n’a', 'pages n’ont')} pas de section « Addenda » : rien n’y est ajouté.`) : null, plan.no_section.length ? lst(plan.no_section) : null,
       h('li', {}, tbd),
+      plan.addenda_drive?.enabled ? h('li', {}, plan.addenda_drive.addenda ? `${plural(plan.addenda_drive.addenda, 'addendum aura', 'addenda auront')} son propre dossier dans « Addenda » (fichiers joints rangés dedans + petit résumé écrit .md), en tâche de fond.` : 'Tous les addenda ont déjà leur dossier et leur résumé.') : null,
       plan.pdm?.enabled ? h('li', {}, plan.pdm.files ? `${plural(plan.pdm.files, 'PDF de cours sera déposé', 'PDF de cours seront déposés')} dans PDM (en tâche de fond ; les liens apparaissent sur la page de chaque chapitre).` : 'Tous les PDF de cours sont déjà dans PDM.') : null),
     drive ? h('p', { class: 'muted small' }, 'Ensuite, une seconde fenêtre te propose de ranger tes cours existants dans Google Drive (avec son propre aperçu).') : null,
     status, h('div', { class: 'row-end' }, cancel, go));

@@ -18,12 +18,16 @@ import { accessFor, can } from './access.js';
 import { accessToken, hasDrive } from './drive.js';
 import { enqueueJob, registerJob, runDueJobs } from './jobs.js';
 import { pdmConfig, pdmUpload, pdmLinks } from './pdm.js';
+import { blocksToMarkdown } from './addendum-md.js';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS school_dirs(user_id TEXT NOT NULL, key TEXT NOT NULL, drive_id TEXT NOT NULL, PRIMARY KEY(user_id, key));
 CREATE TABLE IF NOT EXISTS school_folders(
   page_id TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE, user_id TEXT NOT NULL, drive_id TEXT NOT NULL,
   addenda_id TEXT, name TEXT NOT NULL DEFAULT '', parent_id TEXT, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS school_addenda(
+  page_id TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE, support_id TEXT NOT NULL, user_id TEXT NOT NULL,
+  drive_id TEXT NOT NULL, name TEXT NOT NULL, doc_id TEXT, doc_hash TEXT, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS school_pdm(file_id TEXT PRIMARY KEY REFERENCES school_files(id) ON DELETE CASCADE, page_id TEXT NOT NULL, pdm_name TEXT NOT NULL, folder TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS school_files(
   id TEXT PRIMARY KEY, page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE, drive_id TEXT NOT NULL,
@@ -129,7 +133,26 @@ async function ensureAddenda(token, row) {
   db.prepare('UPDATE school_folders SET addenda_id=? WHERE page_id=?').run(id, row.page_id);
   return id;
 }
-const targetFolder = async (token, ctx, row) => (ctx.isAddendum ? ensureAddenda(token, row) : ensureMain(token, row));
+/**
+ * Dossier d'un addendum : Addenda / <titre de la page> (même nom que dans DeepWell ; « (2) » si deux addenda portent le même titre).
+ * Il contient les fichiers joints et un petit résumé écrit (<titre>.md).
+ */
+async function ensureAddendumDir(token, userId, ctx, row, pageId) {
+  const parent = await ensureAddenda(token, row);
+  let a = db.prepare('SELECT * FROM school_addenda WHERE page_id=?').get(pageId);
+  if (a) {
+    try { const f = await dcall(token, 'GET', `${API}/files/${a.drive_id}?fields=id,trashed`); if (!f.trashed) return a; }
+    catch (e) { if (e.drive !== 404) throw e; }
+    db.prepare('DELETE FROM school_addenda WHERE page_id=?').run(pageId); // dossier supprimé sur Drive : on le recrée
+  }
+  const title = cleanName(db.prepare('SELECT title FROM pages WHERE id=?').get(pageId)?.title, 'Addendum');
+  let name = title, n = 1;
+  while (db.prepare('SELECT 1 FROM school_addenda WHERE support_id=? AND name=? AND page_id!=?').get(ctx.support.id, name, pageId)) name = `${title} (${++n})`;
+  const id = await createFolder(token, name, parent);
+  db.prepare('INSERT INTO school_addenda(page_id,support_id,user_id,drive_id,name,created_at) VALUES(?,?,?,?,?,?)').run(pageId, ctx.support.id, userId, id, name, now());
+  return db.prepare('SELECT * FROM school_addenda WHERE page_id=?').get(pageId);
+}
+const targetFolder = async (token, ctx, row, pageId, userId) => (ctx.isAddendum ? (await ensureAddendumDir(token, userId, ctx, row, pageId)).drive_id : ensureMain(token, row));
 
 // ---------- liens Drive / Canva / fichiers du serveur présents dans les pages ----------
 const DRIVE_RE = /https?:\/\/(?:drive|docs)\.google\.com\/[^\s"'<>\\)\]]+/g;
@@ -210,6 +233,42 @@ const RUN = {
     const out = await pdmUpload(cfg, { buffer, filename: /\.pdf$/i.test(f.name) ? f.name : `${f.name}.pdf`, folder, source: `deepwell:${f.id}` });
     db.prepare('INSERT OR REPLACE INTO school_pdm(file_id,page_id,pdm_name,folder,created_at) VALUES(?,?,?,?,?)').run(f.id, f.page_id, out.name, folder, now());
   },
+  /** Addendum : dossier Addenda/<titre> à jour (nom, fichiers déjà envoyés rangés dedans) + résumé écrit <titre>.md, remis à jour si le contenu a changé. */
+  async 'school.addendum_sync'({ page_id, user_id }) {
+    const ctx = schoolContext(page_id);
+    if (!ctx?.drive || !ctx.isAddendum || ctx.cfg.options?.addendum_doc === false) return;
+    const frow = db.prepare('SELECT * FROM school_folders WHERE page_id=?').get(ctx.support.id);
+    if (!frow) return; // le chapitre n'a pas encore de dossier : le rattachement s'en chargera
+    const token = await accessToken(user_id), parentOf = await ensureAddenda(token, frow);
+    let a = await ensureAddendumDir(token, user_id, ctx, frow, page_id);
+    const title = cleanName(db.prepare('SELECT title FROM pages WHERE id=?').get(page_id)?.title, 'Addendum');
+    const base = title.replace(/ \(\d+\)$/, '') === a.name.replace(/ \(\d+\)$/, '') ? a.name : null;
+    if (!base) { // renommé dans DeepWell
+      let name = title, n = 1;
+      while (db.prepare('SELECT 1 FROM school_addenda WHERE support_id=? AND name=? AND page_id!=?').get(ctx.support.id, name, page_id)) name = `${title} (${++n})`;
+      await dcall(token, 'PATCH', `${API}/files/${a.drive_id}?fields=id`, { name });
+      db.prepare('UPDATE school_addenda SET name=? WHERE page_id=?').run(name, page_id); a = { ...a, name };
+    }
+    // fichiers déjà envoyés dans « Addenda » (ancienne organisation) : rangés dans le dossier de leur addendum
+    for (const f of db.prepare("SELECT * FROM school_files WHERE page_id=? AND kind='upload'").all(page_id)) {
+      let meta; try { meta = await dcall(token, 'GET', `${API}/files/${f.drive_id}?fields=id,parents,trashed`); } catch (e) { if (e.drive === 404) continue; throw e; }
+      if (meta.trashed || meta.parents?.includes(a.drive_id)) continue;
+      await dcall(token, 'PATCH', `${API}/files/${f.drive_id}?fields=id&addParents=${a.drive_id}&removeParents=${(meta.parents || [parentOf]).join(',')}`, {});
+    }
+    // résumé écrit
+    const blocks = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(page_id);
+    const md = blocksToMarkdown(title, blocks), hash = crypto.createHash('sha1').update(`${a.name}\n${md}`).digest('hex');
+    const docName = `${cleanName(title, 'Addendum')}.md`;
+    if (a.doc_id && a.doc_hash === hash) return;
+    const buf = Buffer.from(md, 'utf8');
+    if (a.doc_id) {
+      const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${a.doc_id}?uploadType=media&fields=id`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'text/markdown; charset=UTF-8' }, body: buf });
+      if (r.status === 404) { a.doc_id = null; } else if (!r.ok) throw err(`Google Drive : ${r.status}`, 502, { drive: r.status });
+      else await dcall(token, 'PATCH', `${API}/files/${a.doc_id}?fields=id`, { name: docName });
+    }
+    if (!a.doc_id) a.doc_id = (await uploadBuffer(token, a.drive_id, docName, 'text/markdown', buf)).id;
+    db.prepare('UPDATE school_addenda SET doc_id=?, doc_hash=? WHERE page_id=?').run(a.doc_id, hash, page_id);
+  },
   async 'school.trash'({ user_id, drive_id }) {
     try { await dcall(await accessToken(user_id), 'PATCH', `${API}/files/${drive_id}?fields=id`, { trashed: true }); }
     catch (e) { if (e.drive !== 404) throw e; } // déjà supprimé sur Drive : rien à faire
@@ -224,7 +283,7 @@ const RUN = {
     const token = await accessToken(user_id), folder = await ensureSupportFolder(user_id, ctx, token);
     for (const pid of descendants(page_id)) {
       const pctx = schoolContext(pid), scan = scanPage(pid);
-      const target = await targetFolder(token, pctx, folder);
+      const target = await targetFolder(token, pctx, folder, pid, user_id);
       for (const fid of scan.server) {
         const f = db.prepare('SELECT * FROM files WHERE id=?').get(fid), p = path.join(UPLOAD_DIR, fid);
         if (!f || !fs.existsSync(p) || db.prepare('SELECT 1 FROM school_files WHERE page_id=? AND src=?').get(pid, `/files/${fid}`)) continue;
@@ -269,6 +328,32 @@ export function schoolPdmBackfill(databaseId, userId, dry = false) {
 export function schoolPageChanged(pageId) {
   const row = db.prepare('SELECT user_id FROM school_folders WHERE page_id=?').get(pageId);
   if (row) enqueueJob('school.sync_folder', { page_id: pageId, user_id: row.user_id }, { dedupeKey: `sync:${pageId}` });
+  schoolAddendumChanged(pageId);
+}
+/** Un addendum (titre ou contenu modifié, ou nouvellement créé) : son dossier et son résumé écrit sont mis à jour en tâche de fond, après 20 s de calme. */
+export function schoolAddendumChanged(pageId) {
+  const ctx = schoolContext(pageId);
+  if (!ctx?.drive || !ctx.isAddendum) return;
+  const f = db.prepare('SELECT user_id FROM school_folders WHERE page_id=?').get(ctx.support.id);
+  if (f) enqueueJob('school.addendum_sync', { page_id: pageId, user_id: f.user_id }, { delayMs: 20_000, dedupeKey: `adds:${pageId}` });
+}
+/** Mise à jour de l'architecture : tous les addenda des chapitres déjà sur Drive sont rangés et résumés. Renvoie le nombre d'addenda concernés. */
+export function schoolAddendaBackfill(databaseId, userId, dry = false) {
+  const d = db.prepare('SELECT props FROM pages WHERE id=?').get(databaseId), cfg = parse(d?.props, {})?.dw_school;
+  if (!cfg?.enabled || !cfg.options?.drive) return { enabled: false, addenda: 0 };
+  let n = 0;
+  for (const r of db.prepare("SELECT id FROM pages WHERE parent_id=? AND kind='page' AND archived=0").all(databaseId)) {
+    const fr = db.prepare('SELECT user_id FROM school_folders WHERE page_id=?').get(r.id);
+    if (!fr) continue;
+    for (const pid of descendants(r.id)) {
+      if (pid === r.id) continue;
+      const a = db.prepare('SELECT doc_id FROM school_addenda WHERE page_id=?').get(pid);
+      if (a?.doc_id) continue;
+      n++; if (!dry) enqueueJob('school.addendum_sync', { page_id: pid, user_id: fr.user_id }, { maxAttempts: 6, dedupeKey: `adds:${pid}` });
+    }
+  }
+  if (n && !dry) setTimeout(() => runDueJobs().catch(() => {}), 50).unref();
+  return { enabled: true, addenda: n };
 }
 /** Avant une suppression définitive : les dossiers Drive concernés partent à la corbeille de Drive (récupérable). */
 export function schoolPagesDeleting(pageId) {
@@ -307,7 +392,7 @@ schoolRouter.get('/pages/:id', wrap(async (req, res) => {
   const out = { applicable: true, is_addendum: ctx.isAddendum, support_id: ctx.support.id, drive_connected: hasDrive(req.user.id), folder: !!folder, files, editable: can(role, 'edit'), pdm: !!pcfg && !ctx.isAddendum };
   if (!ctx.isAddendum) { // « Tout télécharger » : fichiers du support et de ses addendums
     out.all_files = db.prepare(`SELECT f.*, p.title AS page_title FROM school_files f JOIN pages p ON p.id=f.page_id WHERE f.page_id IN (${descendants(ctx.support.id).map(() => '?').join(',')}) ORDER BY f.created_at`)
-      .all(...descendants(ctx.support.id)).filter((f) => f.mime !== FOLDER).map((f) => ({ ...fileRow(f), where: f.page_id === ctx.support.id ? '' : 'Addenda' }));
+      .all(...descendants(ctx.support.id)).filter((f) => f.mime !== FOLDER).map((f) => ({ ...fileRow(f), where: f.page_id === ctx.support.id ? '' : `Addenda/${cleanName(f.page_title, 'Addendum')}` }));
   }
   res.json(out);
 }));
@@ -328,7 +413,7 @@ schoolRouter.post('/pages/:id/folder', wrap(async (req, res) => {
 schoolRouter.post('/pages/:id/upload-session', wrap(async (req, res) => {
   const ctx = need(req, req.params.id, 'edit'); needDrive(req);
   const token = await accessToken(req.user.id), row = await ensureSupportFolder(req.user.id, ctx, token);
-  res.json({ token, expires_in: 3000, folder_id: await targetFolder(token, ctx, row) });
+  res.json({ token, expires_in: 3000, folder_id: await targetFolder(token, ctx, row, req.params.id, req.user.id) });
 }));
 
 /** Le navigateur annonce un fichier qu'il vient d'envoyer : le serveur vérifie auprès de Drive avant d'enregistrer. */
@@ -336,7 +421,7 @@ schoolRouter.post('/pages/:id/files', wrap(async (req, res) => {
   const ctx = need(req, req.params.id, 'edit'); needDrive(req);
   const driveId = String(req.body?.drive_id || '');
   if (!/^[\w-]{10,}$/.test(driveId)) throw err('Identifiant Drive invalide');
-  const token = await accessToken(req.user.id), row = await ensureSupportFolder(req.user.id, ctx, token), target = await targetFolder(token, ctx, row);
+  const token = await accessToken(req.user.id), row = await ensureSupportFolder(req.user.id, ctx, token), target = await targetFolder(token, ctx, row, req.params.id, req.user.id);
   const f = await dcall(token, 'GET', `${API}/files/${driveId}?fields=id,name,mimeType,size,parents,trashed`);
   if (f.trashed || !f.parents?.includes(target)) throw err('Ce fichier n’est pas dans le dossier du chapitre.', 409);
   const saved = addFile(req.params.id, f, 'upload');
