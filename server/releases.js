@@ -6,6 +6,15 @@
  */
 export const RELEASES = [
   {
+    version: '3.4.1', date: '2026-11-22',
+    nouveautes: [],
+    ameliorations: [
+      'Kanban : la vue tient maintenant dans l’écran. Chaque colonne a sa propre barre de défilement verticale, et la barre de défilement horizontale reste toujours visible en bas au lieu de se perdre sous la page.',
+      'Kanban : deux flèches (gauche et droite) apparaissent sur les côtés pour passer d’un groupe de colonnes à l’autre. On peut aussi faire défiler avec la molette de la souris au-dessus du fond ou de l’en-tête d’une colonne, ou « attraper » le fond du tableau avec la souris pour le faire glisser.',
+    ],
+    corrections: [],
+  },
+  {
     version: '3.4.0', date: '2026-11-19',
     nouveautes: [
       'Formules mathématiques : les blocs « Équation » et les équations placées dans une ligne de texte sont maintenant dessinées en vraies formules (fractions, indices, exposants, lettres grecques comme ϱ ou ϖ, accents…) au lieu de s’afficher en code LaTeX brut. Un clic sur un bloc ouvre le texte LaTeX pour le modifier. La bibliothèque (KaTeX) est incluse dans Deepwell, sans service extérieur, et ne se charge que sur les pages qui contiennent une formule. Une formule mal écrite reste affichée en texte brut.',

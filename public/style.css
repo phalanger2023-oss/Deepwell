@@ -357,9 +357,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .dbv-count { padding: 6px 2px; } .dbv-empty { text-align: center; padding: 40px 16px; color: var(--muted); background: var(--hover); border-radius: var(--radius); }
 .db-props { padding: 6px; min-width: 220px; } .db-props label { cursor: pointer; }
 /* kanban */
-.kb-board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 14px; }
-.kb-col { width: 272px; flex: none; background: var(--sidebar-bg); border-radius: 8px; padding: 8px; transition: background .12s, box-shadow .12s; min-height: 80px; } .kb-col.over { box-shadow: 0 0 0 2px var(--accent) inset; }
-.kb-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; } .kb-cards { display: grid; gap: 8px; }
+.kb-wrap { position: relative; }
+.kb-board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; overflow-y: hidden; padding-bottom: 14px; cursor: grab; } .kb-board.panning { cursor: grabbing; user-select: none; }
+.kb-nav { position: absolute; top: 40%; z-index: 3; width: 34px; height: 34px; display: none; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: var(--card); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; } .kb-nav:hover { background: var(--hover); }
+.kb-nav.prev { left: 4px; } .kb-nav.next { right: 4px; } .kb-wrap.can-prev .kb-nav.prev, .kb-wrap.can-next .kb-nav.next { display: grid; }
+.kb-col { display: flex; flex-direction: column; max-height: max(320px, calc(100vh - 320px)); cursor: default; width: 272px; flex: none; background: var(--sidebar-bg); border-radius: 8px; padding: 8px; transition: background .12s, box-shadow .12s; min-height: 80px; } .kb-col.over { box-shadow: 0 0 0 2px var(--accent) inset; }
+.kb-head, .kb-add { flex: none; } .kb-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; } .kb-cards { display: grid; gap: 8px; align-content: start; overflow-y: auto; min-height: 0; padding: 1px; }
 .kb-card { background: var(--card); border-radius: 6px; padding: 9px 11px; box-shadow: rgba(15,15,15,.1) 0 0 0 1px, rgba(15,15,15,.1) 0 2px 4px; cursor: pointer; } .kb-card:hover { background: var(--hover); } .kb-card.dragging { opacity: .45; }
 .kb-title { display: flex; align-items: center; gap: 6px; font-weight: 500; font-size: .94em; line-height: 1.35; } .kb-props { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; font-size: .8em; color: var(--muted); }
 .kb-add, .kb-newcol { display: flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--muted); padding: 6px 8px; border-radius: 4px; font-size: .86em; width: 100%; margin-top: 4px; } .kb-add:hover, .kb-newcol:hover { background: var(--hover); color: var(--fg); }

@@ -269,7 +269,28 @@ function drawBoard(root, v, c) {
     const n = (await ask('Nouveau groupe', 'Nom de la colonne'))?.trim(); if (!n || options.some((o) => o.name === n)) return;
     def[type] = { ...def[type], options: [...options, { name: n, color: 'default' }] }; await c.saveSchema(); c.redraw();
   } }, vi('plus', 14), 'Groupe') : null;
-  root.replaceChildren(h('div', { class: 'kb-board' }, ...cols, addGroup));
+  const board = h('div', { class: 'kb-board' }, ...cols, addGroup);
+  const wrap = h('div', { class: 'kb-wrap' }, board,
+    h('button', { class: 'kb-nav prev', title: 'Colonnes précédentes', 'aria-label': 'Colonnes précédentes', onclick: () => board.scrollBy({ left: -Math.max(240, board.clientWidth * 0.8), behavior: 'smooth' }) }, vi('chevron-left', 18)),
+    h('button', { class: 'kb-nav next', title: 'Colonnes suivantes', 'aria-label': 'Colonnes suivantes', onclick: () => board.scrollBy({ left: Math.max(240, board.clientWidth * 0.8), behavior: 'smooth' }) }, vi('chevron-right', 18)));
+  const sync = () => { const max = board.scrollWidth - board.clientWidth; wrap.classList.toggle('can-prev', board.scrollLeft > 2); wrap.classList.toggle('can-next', board.scrollLeft < max - 2); };
+  board.addEventListener('scroll', sync, { passive: true });
+  // Molette : sur le fond ou l'en-tête d'une colonne, elle fait défiler le Kanban de gauche à droite (dans une colonne, elle reste verticale).
+  board.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.target.closest('.kb-cards') || Math.abs(e.deltaY) <= Math.abs(e.deltaX) || board.scrollWidth <= board.clientWidth) return;
+    e.preventDefault(); board.scrollLeft += e.deltaY;
+  }, { passive: false });
+  // Glisser-déplacer le fond (ou l'en-tête d'une colonne) fait défiler, comme « attraper » le tableau.
+  board.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target.closest('.kb-card, button, input, select, a') || !(e.target === board || e.target.closest('.kb-head'))) return;
+    const x0 = e.clientX, s0 = board.scrollLeft; board.classList.add('panning');
+    const move = (m) => { board.scrollLeft = s0 - (m.clientX - x0); };
+    const up = () => { board.classList.remove('panning'); document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
+  });
+  root.replaceChildren(wrap);
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(sync).observe(board);
+  requestAnimationFrame(sync);
 }
 
 // ====================================================================== CALENDRIER
