@@ -118,6 +118,7 @@ export async function ensureSupportFolder(userId, ctx, token) {
   return db.prepare('SELECT * FROM school_folders WHERE page_id=?').get(ctx.support.id);
 }
 
+if (!db.prepare('PRAGMA table_info(school_files)').all().some((c) => c.name === 'annotates')) db.exec('ALTER TABLE school_files ADD COLUMN annotates TEXT'); // version annotée (ex. faite sur Canva) d\'un PDF d\'origine
 if (!db.prepare('PRAGMA table_info(school_folders)').all().some((c) => c.name === 'main_id')) db.exec('ALTER TABLE school_folders ADD COLUMN main_id TEXT');
 /** Sous-dossier « Document principal » : les fichiers de la page du chapitre elle-même (créé au premier envoi). */
 async function ensureMain(token, row) {
@@ -196,7 +197,7 @@ const addFile = (pageId, f, kind, src = null) => {
     .run(uid(), pageId, f.id, String(f.name || 'Document').slice(0, 255), f.mimeType || '', Number(f.size) || 0, kind, src, now());
   return db.prepare('SELECT * FROM school_files WHERE page_id=? AND drive_id=?').get(pageId, f.id);
 };
-const fileRow = (f) => ({ id: f.id, page_id: f.page_id, drive_id: f.drive_id, name: f.name, mime: f.mime, size: f.size, kind: f.kind, created_at: f.created_at, folder: f.mime === FOLDER });
+const fileRow = (f) => ({ id: f.id, page_id: f.page_id, drive_id: f.drive_id, name: f.name, mime: f.mime, size: f.size, kind: f.kind, annotates: f.annotates || null, created_at: f.created_at, folder: f.mime === FOLDER });
 
 // ---------- opérations répercutées vers Drive : tentées tout de suite, sinon rejouées par la file ----------
 async function attempt(type, payload) {
@@ -424,7 +425,18 @@ schoolRouter.post('/pages/:id/files', wrap(async (req, res) => {
   const token = await accessToken(req.user.id), row = await ensureSupportFolder(req.user.id, ctx, token), target = await targetFolder(token, ctx, row, req.params.id, req.user.id);
   const f = await dcall(token, 'GET', `${API}/files/${driveId}?fields=id,name,mimeType,size,parents,trashed`);
   if (f.trashed || !f.parents?.includes(target)) throw err('Ce fichier n’est pas dans le dossier du chapitre.', 409);
-  const saved = addFile(req.params.id, f, 'upload');
+  const orig = req.body?.annotates ? db.prepare('SELECT * FROM school_files WHERE id=? AND page_id=?').get(String(req.body.annotates), req.params.id) : null;
+  if (req.body?.annotates) { // version annotée d'un PDF d'origine : l'original reste vierge, l'annotée est rangée à côté et déposée dans PDM
+    if (!orig || !isPdf(orig) || orig.annotates) throw err('Le document d’origine est introuvable (ou n’est pas un PDF).', 404);
+    if (db.prepare('SELECT 1 FROM school_files WHERE annotates=?').get(orig.id)) throw err('Ce document a déjà une version annotée : retire-la d’abord pour en ajouter une autre.', 409);
+  }
+  let saved = addFile(req.params.id, f, 'upload');
+  if (orig) {
+    const name = cleanName(orig.name.replace(/\.pdf$/i, ''), 'Document') + ' (annoté).pdf';
+    db.prepare('UPDATE school_files SET annotates=?, name=? WHERE id=?').run(orig.id, name, saved.id);
+    saved = db.prepare('SELECT * FROM school_files WHERE id=?').get(saved.id);
+    await attempt('school.rename_file', { user_id: req.user.id, drive_id: saved.drive_id, name });
+  }
   res.json(fileRow(saved));
   if (!ctx.isAddendum) queuePdm(ctx.support.id, req.user.id); // PDF de référence : déposé dans PDM (si l'option est active)
 }));

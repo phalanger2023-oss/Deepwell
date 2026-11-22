@@ -84,8 +84,10 @@ export async function mountSchoolFiles(host, page) {
   const row = (f) => h('div', { class: 'sf-row' },
     vi(iconFor(f), 16),
     h('button', { class: 'sf-name', title: f.folder ? 'Ouvrir le dossier dans Drive' : 'Voir l’aperçu', onclick: () => (f.folder ? window.open(driveUrl(f), '_blank', 'noopener') : (preview = f, draw())) }, f.name),
-    h('span', { class: 'muted small' }, [f.size ? fmtSize(f.size) : '', f.kind === 'link' ? 'déjà sur Drive' : ''].filter(Boolean).join(' · ')),
+    h('span', { class: 'muted small' }, [f.size ? fmtSize(f.size) : '', f.kind === 'link' ? 'déjà sur Drive' : '', f.annotates ? 'version annotée' : ''].filter(Boolean).join(' · ')),
     h('span', { class: 'sf-actions' },
+      info.editable && !f.folder && !f.annotates && /pdf/i.test(f.mime || f.name) && !info.files.some((x) => x.annotates === f.id)
+        ? h('button', { class: 'btn small', title: 'Ajoute une version déjà annotée (ex. faite sur Canva) à côté de cet original, qui reste vierge', onclick: () => annotate(f) }, vi('pen-line', 14), 'Ajouter une version annotée') : null,
       f.pdm ? h('a', { class: 'btn small', href: f.pdm.url, target: '_blank', rel: 'noopener', title: 'Ouvrir la version annotée dans PDM' }, vi('pen-line', 14), 'Éditer dans PDM') : null,
       f.pdm ? h('a', { class: 'btn small', href: f.pdm.original_url, title: 'Télécharger le PDF d’origine, vierge (jamais modifié par PDM)' }, vi('download', 14), 'Original vierge') : null,
       f.pdm_pending ? h('span', { class: 'muted small', title: 'Le document est déposé dans PDM en tâche de fond ; les liens apparaissent dès que c’est fait.' }, 'Envoi vers PDM…') : null,
@@ -130,15 +132,19 @@ export async function mountSchoolFiles(host, page) {
       if (!r.synced) toast('Retiré de DeepWell. Google n’a pas répondu : nouvelle tentative automatique.');
     });
   }
-  fileInput.addEventListener('change', async () => {
-    const files = [...fileInput.files]; fileInput.value = '';
+  const annInput = h('input', { type: 'file', accept: 'application/pdf,.pdf', hidden: true });
+  let annOf = null;
+  const annotate = (f) => { annOf = f.id; annInput.click(); };
+  annInput.addEventListener('change', () => { const fl = [...annInput.files]; annInput.value = ''; if (fl.length && annOf) uploadFiles(fl, annOf); annOf = null; });
+  fileInput.addEventListener('change', () => { const fl = [...fileInput.files]; fileInput.value = ''; uploadFiles(fl, null); });
+  async function uploadFiles(files, annotates) {
     if (!files.length) return;
     await run('Préparation de l’envoi…', async () => {
       const s = await api.post(`/api/school/pages/${page.id}/upload-session`);
       info.folder = true;
       for (const [i, file] of files.entries()) {
         const d = await uploadToDrive(file, s.folder_id, s.token, (p) => { busy = `Envoi ${i + 1}/${files.length} : ${Math.round(p * 100)} %`; status.textContent = busy; });
-        const saved = await api.post(`/api/school/pages/${page.id}/files`, { drive_id: d.id });
+        const saved = await api.post(`/api/school/pages/${page.id}/files`, { drive_id: d.id, ...(annotates ? { annotates } : {}) });
         if (info.pdm && /pdf/i.test(saved.mime || saved.name)) saved.pdm_pending = true;
         info.files.push(saved); if (!info.is_addendum) (info.all_files ||= []).push({ ...saved, where: '' });
         draw();
@@ -146,10 +152,10 @@ export async function mountSchoolFiles(host, page) {
       toast(files.length > 1 ? `${files.length} fichiers ajoutés sur Drive` : 'Fichier ajouté sur Drive');
     });
     polls = 0; pollPdm();
-  });
+  }
 
   host.replaceChildren(h('section', { class: 'sf' },
-    h('div', { class: 'sf-head' }, h('h3', {}, vi('folder', 16), title), status, h('span', { class: 'sf-btns' }, addBtn, zipBtn), fileInput), list, previewBox));
+    h('div', { class: 'sf-head' }, h('h3', {}, vi('folder', 16), title), status, h('span', { class: 'sf-btns' }, addBtn, zipBtn), fileInput, annInput), list, previewBox));
   draw();
   pollPdm(); // liens PDM déjà en attente à l'ouverture de la page
 }
