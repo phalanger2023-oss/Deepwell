@@ -744,3 +744,5 @@ body.is-peek .cover + .page .page-icon { margin-top: -97px; }
 .tpl-list { display: grid; gap: 6px; margin-bottom: 12px; } .tpl-row { display: flex; align-items: center; gap: 6px; } .tpl-name { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tpl-banner { display: flex; gap: 6px; align-items: center; }
 .ctx-menu { z-index: 110; } .ctx-menu.pop { z-index: 120; } /* les menus s’ouvrent au-dessus des fenêtres (ex. choix d’une valeur par défaut) */
+
+.kb-board { user-select: none; -webkit-user-select: none; } .kb-board input, .kb-board textarea { user-select: text; -webkit-user-select: text; } /* le Kanban se manipule à la souris : jamais de texte sélectionné en glissant */

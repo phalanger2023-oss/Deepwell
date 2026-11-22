@@ -11,6 +11,7 @@ export const RELEASES = [
       'Valeurs par défaut : le bouton « Par défaut » d’une base permet de choisir, pour chaque propriété (sélection, statut, multi-sélection, case à cocher, nombre, texte, URL, e-mail, téléphone), la valeur que reçoit toute nouvelle ligne. Par exemple « Statut » = « À faire » : chaque nouvelle ligne arrive dans cette colonne du Kanban. Ça marche pour « Nouvelle ligne », les modèles (la valeur du modèle passe avant) et les boutons d’automatisation ; « Nouvelle carte » dans une colonne du Kanban garde la colonne choisie.',
     ],
     ameliorations: [
+      'Kanban : en maintenant le clic gauche sur le fond, le tableau défile au lieu de sélectionner du texte (la sélection de texte est désactivée dans le Kanban, hors champs de saisie).',
       'Kanban : une barre de navigation en haut du tableau (visible dès que les colonnes débordent) : on tire son curseur ou on clique dessus pour aller directement à l’endroit voulu. On peut aussi attraper une carte pour faire défiler en maintenant Maj, ou avec un clic molette (un glisser normal déplace toujours la carte).',
     ],
     corrections: [],

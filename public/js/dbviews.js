@@ -58,7 +58,8 @@ function grabScroll(body) {
     if (!(e.button === 0 || forced) || (e.target.closest(NO_GRAB) && !forced)) return;
     const link = e.target.closest('a'), cardLink = forced || link?.matches('.gal-card, .lst-row'); // cartes de la galerie, lignes de la liste : on peut les attraper, un simple clic les ouvre toujours
     if (link && !cardLink) return;
-    if (cardLink) e.preventDefault(); // pas de « glisser le lien » ni de glisser-déposer de la carte
+    e.preventDefault(); // pas de sélection de texte, ni de « glisser le lien » / glisser-déposer de la carte pendant qu'on fait défiler
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur(); // le clic sur le fond sort quand même d'un champ en cours de saisie
     const hs = e.target.closest('.kb-board, .db-scroll') || body.querySelector('.kb-board, .db-scroll'), vs = body.closest('.scroll') || document.scrollingElement;
     const x0 = e.clientX, y0 = e.clientY, sx = hs ? hs.scrollLeft : 0, sy = vs ? vs.scrollTop : 0;
     let on = false;
