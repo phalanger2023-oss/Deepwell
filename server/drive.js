@@ -21,9 +21,9 @@ const cfg = () => ({
 export const driveConfigured = () => !!(cfg().id && cfg().secret);
 
 // Jetons chiffrés (AES-256-GCM) avec la clé locale data/secret.key, absente des sauvegardes de la base.
-const enc = (txt) => { const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', secretKey(), iv);
+export const enc = (txt) => { const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', secretKey(), iv);
   const d = Buffer.concat([c.update(txt, 'utf8'), c.final()]); return [iv, c.getAuthTag(), d].map((b) => b.toString('base64')).join('.'); };
-const dec = (s) => { const [iv, tag, d] = s.split('.').map((x) => Buffer.from(x, 'base64'));
+export const dec = (s) => { const [iv, tag, d] = s.split('.').map((x) => Buffer.from(x, 'base64'));
   const c = crypto.createDecipheriv('aes-256-gcm', secretKey(), iv); c.setAuthTag(tag); return Buffer.concat([c.update(d), c.final()]).toString('utf8'); };
 
 const states = new Map(); // state -> {userId, exp}

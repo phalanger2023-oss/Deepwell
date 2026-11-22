@@ -6,6 +6,16 @@
  */
 export const RELEASES = [
   {
+    version: '3.4.8', date: '2026-11-22',
+    nouveautes: [
+      'Liaison avec PDM (éditeur de PDF) : quand le PDF de référence d’un chapitre est ajouté, il est déposé automatiquement dans PDM, dans un vrai dossier année / matière / chapitre. La page du chapitre affiche alors « Éditer dans PDM » (version annotée) et « Original vierge » (PDF d’origine jamais modifié). Les addenda ne sont pas envoyés.',
+      'Réglages → Google Drive (administrateur) : adresse de PDM + clé de liaison, avec vérification de la connexion avant enregistrement. Option de base « Intégration de l’éditeur de PDF » à activer.',
+      '« Mettre à jour l’architecture… » envoie aussi à PDM les PDF de cours déjà présents (l’aperçu indique combien).',
+    ],
+    ameliorations: [],
+    corrections: [],
+  },
+  {
     version: '3.4.7', date: '2026-11-22',
     nouveautes: [
       'Mode scolaire : Réglages de la base → « Mettre à jour l’architecture… ». Un aperçu montre d’abord tout ce qui va changer, puis : les boutons sans aucune action sont retirés (pages et modèles), le bouton « ＋ Nouvel addendum » est ajouté dans la section « Addenda », et la matière « TBD » devient la valeur par défaut des nouvelles lignes (option créée si besoin ; une ligne créée depuis la colonne d’une matière garde cette matière). Si Drive est activé, une seconde fenêtre propose ensuite de ranger les cours existants dans Drive. Chaque page modifiée garde sa version d’avant dans l’historique.',

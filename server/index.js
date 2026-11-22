@@ -15,6 +15,7 @@ import { localizeRemoteIcons } from './icons-local.js';
 import { RELEASES } from './releases.js';
 import { startJobWorker } from './jobs.js';
 import { schoolRouter } from './school-drive.js';
+import { pdmRouter } from './pdm.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const app = express();
@@ -52,6 +53,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/pages', pagesRouter);
 app.use('/api/drive', driveRouter);
 app.use('/api/school', schoolRouter);
+app.use('/api/pdm', pdmRouter);
 
 // --- Réglages (personnalisation) ---
 const PUBLIC_KEYS = ['site_name', 'accent', 'font', 'radius', 'custom_css', 'default_theme', 'content_width', 'divider_color', 'text_size', 'favicon', 'dev_mode'];

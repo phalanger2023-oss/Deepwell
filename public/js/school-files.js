@@ -86,10 +86,21 @@ export async function mountSchoolFiles(host, page) {
     h('button', { class: 'sf-name', title: f.folder ? 'Ouvrir le dossier dans Drive' : 'Voir l’aperçu', onclick: () => (f.folder ? window.open(driveUrl(f), '_blank', 'noopener') : (preview = f, draw())) }, f.name),
     h('span', { class: 'muted small' }, [f.size ? fmtSize(f.size) : '', f.kind === 'link' ? 'déjà sur Drive' : ''].filter(Boolean).join(' · ')),
     h('span', { class: 'sf-actions' },
+      f.pdm ? h('a', { class: 'btn small', href: f.pdm.url, target: '_blank', rel: 'noopener', title: 'Ouvrir la version annotée dans PDM' }, vi('pen-line', 14), 'Éditer dans PDM') : null,
+      f.pdm ? h('a', { class: 'btn small', href: f.pdm.original_url, title: 'Télécharger le PDF d’origine, vierge (jamais modifié par PDM)' }, vi('download', 14), 'Original vierge') : null,
+      f.pdm_pending ? h('span', { class: 'muted small', title: 'Le document est déposé dans PDM en tâche de fond ; les liens apparaissent dès que c’est fait.' }, 'Envoi vers PDM…') : null,
       f.folder ? null : h('button', { class: 'icon-btn', title: 'Télécharger', 'aria-label': 'Télécharger', onclick: () => downloadOne(f) }, vi('download', 15)),
       info.editable ? h('button', { class: 'icon-btn', title: 'Renommer', 'aria-label': 'Renommer', onclick: () => rename(f) }, vi('pencil', 15)) : null,
       info.editable ? h('button', { class: 'icon-btn', title: 'Retirer', 'aria-label': 'Retirer', onclick: () => remove(f) }, vi('trash-2', 15)) : null));
 
+  // PDF de référence : le dépôt dans PDM se fait en tâche de fond ; on revérifie toutes les 5 s (1 min au plus) pour afficher les liens
+  let polls = 0;
+  async function pollPdm() {
+    if (polls >= 12 || !info.files.some((f) => f.pdm_pending)) return;
+    polls++; await new Promise((r) => setTimeout(r, 5000));
+    try { const fresh = await api.get(`/api/school/pages/${page.id}`); for (const f of info.files) { const n = fresh.files.find((x) => x.id === f.id); if (n) { f.pdm = n.pdm; f.pdm_pending = n.pdm_pending; } } draw(); } catch { return; }
+    pollPdm();
+  }
   const run = async (label, fn) => { busy = label; draw(); try { await fn(); } catch (e) { toast(e.message, 'error'); } busy = ''; draw(); };
   async function downloadOne(f) { await run('Téléchargement…', async () => saveBlob(new Blob([await fetchFile(f)]), fileName(f))); }
   async function downloadAll() {
@@ -128,14 +139,17 @@ export async function mountSchoolFiles(host, page) {
       for (const [i, file] of files.entries()) {
         const d = await uploadToDrive(file, s.folder_id, s.token, (p) => { busy = `Envoi ${i + 1}/${files.length} : ${Math.round(p * 100)} %`; status.textContent = busy; });
         const saved = await api.post(`/api/school/pages/${page.id}/files`, { drive_id: d.id });
+        if (info.pdm && /pdf/i.test(saved.mime || saved.name)) saved.pdm_pending = true;
         info.files.push(saved); if (!info.is_addendum) (info.all_files ||= []).push({ ...saved, where: '' });
         draw();
       }
       toast(files.length > 1 ? `${files.length} fichiers ajoutés sur Drive` : 'Fichier ajouté sur Drive');
     });
+    polls = 0; pollPdm();
   });
 
   host.replaceChildren(h('section', { class: 'sf' },
     h('div', { class: 'sf-head' }, h('h3', {}, vi('folder', 16), title), status, h('span', { class: 'sf-btns' }, addBtn, zipBtn), fileInput), list, previewBox));
   draw();
+  pollPdm(); // liens PDM déjà en attente à l'ouverture de la page
 }

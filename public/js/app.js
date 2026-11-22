@@ -1057,12 +1057,28 @@ async function tabDrive(p) {
       h('li', {}, 'Identifiants → créer un « ID client OAuth » (application Web).'),
       h('li', {}, `URI de redirection autorisé : ${st.redirect}`),
       h('li', {}, 'Définir GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET et PUBLIC_URL dans l’environnement du serveur, puis redémarrer.'))));
+    if (admin) await pdmSection(p);
     return;
   }
   if (st.connected) {
     p.append(h('p', {}, '✅ Connecté', st.email ? ` : ${st.email}` : ''), h('button', { class: 'btn danger', onclick: async () => { await api.post('/api/drive/disconnect'); showSettings('drive'); } }, 'Déconnecter'));
     if (admin) { const s = await api.get('/api/admin/settings'); p.append(h('hr'), h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.backup_to_drive === '1', onchange: async (e) => { await api.put('/api/settings', { backup_to_drive: e.target.checked ? '1' : '0' }); } }), 'Envoyer automatiquement chaque sauvegarde vers Google Drive (dossier « Deepwell Backups »)')); }
   } else p.append(h('button', { class: 'btn primary', onclick: async () => { const r = await api.post('/api/drive/connect'); location.href = r.url; } }, 'Connecter Google Drive'));
+  if (admin) await pdmSection(p);
+}
+
+/** PDM (éditeur de PDF) : adresse + clé secrète affichée sur l'accueil de PDM (« Lier à DeepWell »). Réservé à l'administrateur. */
+async function pdmSection(p) {
+  const cfg = await api.get('/api/pdm/config');
+  const url = h('input', { class: 'input', value: cfg.url || 'https://pdm.louisharicuisine.com', placeholder: 'https://pdm.louisharicuisine.com' });
+  const key = h('input', { class: 'input', type: 'password', placeholder: cfg.configured ? '•••••• (clé enregistrée : laisse vide pour la garder)' : 'Clé affichée par PDM', autocomplete: 'off' });
+  const state = h('p', { class: cfg.configured ? '' : 'muted' }, cfg.configured ? `✅ Lié à PDM : ${cfg.url}` : 'PDM n’est pas encore lié.');
+  p.append(h('hr'), h('h3', {}, 'PDM (éditeur de PDF)'),
+    h('p', { class: 'muted' }, 'Pour que le PDF de référence de chaque cours soit déposé automatiquement dans PDM : ouvre PDM, déroule « Lier à DeepWell » sur l’accueil, clique « Afficher la clé », puis recopie-la ici. Active ensuite l’option « Intégration de l’éditeur de PDF » dans les réglages de ta base (mode scolaire).'),
+    state, h('label', { class: 'btn-field' }, h('span', { class: 'btn-fl' }, 'Adresse de PDM'), url), h('label', { class: 'btn-field' }, h('span', { class: 'btn-fl' }, 'Clé secrète'), key),
+    h('div', { class: 'share-row' },
+      h('button', { class: 'btn primary', onclick: async (e) => { e.target.disabled = true; try { const r = await api.put('/api/pdm/config', { url: url.value, key: key.value }); key.value = ''; state.textContent = `✅ Lié à PDM : ${r.url}`; state.className = ''; toast('PDM lié : connexion vérifiée'); } catch (err) { toast(err.message, 'error'); } e.target.disabled = false; } }, 'Vérifier et enregistrer'),
+      cfg.configured ? h('button', { class: 'btn danger', onclick: async () => { if (!(await confirmBox('Délier PDM ? Les documents déjà déposés restent dans PDM.'))) return; await api.del('/api/pdm/config'); state.textContent = 'PDM n’est pas encore lié.'; state.className = 'muted'; } }, 'Délier') : null));
 }
 
 async function tabImport(p) {

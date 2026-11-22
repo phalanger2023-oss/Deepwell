@@ -15,8 +15,20 @@ const addF = (o) => { const id = `fake${String(++seq).padStart(8, '0')}x`; F.set
 const byName = (name, parent) => [...F.values()].find((f) => f.name === name && f.parents.includes(parent) && !f.trashed);
 const J = (o, status = 200) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json' } });
 const realFetch = globalThis.fetch;
+// ---- faux PDM : enregistre les dépôts (clé, dossier, source) ----
+const PDM = { docs: [], key: 'CLE-PDM' };
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url);
+  if (/^https:\/\/pdm\.test/.test(u)) {
+    if (opts.headers?.['X-PDM-Key'] !== PDM.key) return J({ error: 'Clé d\'intégration refusée' }, 401);
+    if (u.endsWith('/api/integration/ping')) return J({ ok: true });
+    if (u.endsWith('/api/integration/docs')) {
+      const fd = opts.body, src = fd.get('source'), ex = PDM.docs.find((d) => d.source === src);
+      if (ex) return J({ name: ex.name, existing: true });
+      const name = fd.get('file').name; PDM.docs.push({ name, folder: fd.get('folder'), source: src, size: fd.get('file').size });
+      return J({ name, folder: fd.get('folder'), existing: false });
+    }
+  }
   if (!/googleapis\.com/.test(u)) return realFetch(url, opts);
   if (down) return J({ error: { message: 'panne simulée' } }, 503);
   if (u.includes('oauth2.googleapis.com/token')) return J({ access_token: 'tok', expires_in: 3600 });
@@ -33,6 +45,7 @@ globalThis.fetch = async (url, opts = {}) => {
   if (p === '/drive/v3/files' && m === 'POST') { const b = JSON.parse(opts.body); return J({ id: addF({ name: b.name, mimeType: b.mimeType, parents: b.parents || ['root'] }) }); }
   const f = F.get(p.split('/').pop());
   if (!f) return J({ error: { message: 'File not found' } }, 404);
+  if (url2.searchParams.get('alt') === 'media') return new Response('%PDF-1.4 faux pdf');
   if (m === 'GET') return J(f);
   if (m === 'PATCH') {
     const b = JSON.parse(opts.body || '{}'), add = url2.searchParams.get('addParents'), rem = url2.searchParams.get('removeParents');
@@ -193,4 +206,34 @@ test('analyse des liens : formats Drive courants', async () => {
   assert.deepEqual(parseDriveUrl('https://drive.google.com/open?id=1AbCdEfGhIjKlMnOpQr'), { id: '1AbCdEfGhIjKlMnOpQr', folder: false });
   assert.deepEqual(parseDriveUrl('https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQr?usp=sharing'), { id: '1AbCdEfGhIjKlMnOpQr', folder: true });
   assert.equal(parseDriveUrl('https://drive.google.com/'), null);
+});
+
+test('PDM : clé vérifiée, PDF de référence déposé dans année / matière / chapitre, liens fournis, pas de doublon, addenda exclus', async () => {
+  // configuration : mauvaise clé refusée, bonne clé enregistrée (chiffrée)
+  assert.equal((await api('PUT', '/api/pdm/config', { url: 'https://pdm.test', key: 'mauvaise' })).status, 401);
+  assert.equal((await api('GET', '/api/pdm/config')).body.configured, false);
+  assert.equal((await api('PUT', '/api/pdm/config', { url: 'https://pdm.test/', key: PDM.key })).status, 200);
+  assert.equal((await api('GET', '/api/pdm/config')).body.url, 'https://pdm.test');
+  assert.ok(!JSON.stringify(DB.db.prepare("SELECT value FROM settings WHERE key='pdm_key'").get()).includes(PDM.key)); // jamais en clair
+  // option « Intégration de l'éditeur de PDF » + PDF déjà présent avant l'option (rattrapage)
+  await api('PATCH', `/api/pages/${ctx.db}`, { props: { dw_school: { enabled: true, options: { drive: true, pdf: true } } } });
+  const s1 = (await api('POST', `/api/school/pages/${ctx.s1}/upload-session`)).body;
+  const pdfId = addF({ name: 'cours.pdf', mimeType: 'application/pdf', parents: [s1.folder_id], size: '999' });
+  const pre = (await api('POST', `/api/pages/${ctx.db}/architecture`, { dry: true })).body; assert.equal(pre.pdm.enabled, true); assert.ok(pre.pdm.files >= 0);
+  const saved = (await api('POST', `/api/school/pages/${ctx.s1}/files`, { drive_id: pdfId })).body;
+  await settle();
+  assert.equal(PDM.docs.length, 1); assert.equal(PDM.docs[0].folder, 'Recueil 5A6 (2026-2027)/Histoire/P.S.A. #0001-FR (revu)'); assert.equal(PDM.docs[0].source, `deepwell:${saved.id}`);
+  const info = (await api('GET', `/api/school/pages/${ctx.s1}`)).body, f = info.files.find((x) => x.id === saved.id);
+  assert.equal(info.pdm, true); assert.equal(f.pdm.url, 'https://pdm.test/#/cours.pdf'); assert.equal(f.pdm.original_url, 'https://pdm.test/api/docs/cours.pdf/pdf?dl=1'); assert.ok(!f.pdm_pending);
+  // idempotent : rien n'est renvoyé, et un addendum n'est jamais déposé dans PDM
+  await settle(); assert.equal(PDM.docs.length, 1);
+  const add = (await api('POST', '/api/pages', { title: 'Addendum', parent_id: ctx.s1 })).body;
+  const sa = (await api('POST', `/api/school/pages/${add.id}/upload-session`)).body;
+  await api('POST', `/api/school/pages/${add.id}/files`, { drive_id: addF({ name: 'annexe.pdf', mimeType: 'application/pdf', parents: [sa.folder_id] }) }); await settle();
+  assert.equal(PDM.docs.length, 1);
+  assert.equal((await api('GET', `/api/school/pages/${add.id}`)).body.pdm, false);
+  // option désactivée : plus rien n'est déposé
+  await api('PATCH', `/api/pages/${ctx.db}`, { props: { dw_school: { enabled: true, options: { drive: true } } } });
+  await api('POST', `/api/school/pages/${ctx.s1}/files`, { drive_id: addF({ name: 'autre.pdf', mimeType: 'application/pdf', parents: [s1.folder_id] }) }); await settle();
+  assert.equal(PDM.docs.length, 1);
 });

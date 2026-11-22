@@ -17,12 +17,14 @@ import { requireAuth } from './auth.js';
 import { accessFor, can } from './access.js';
 import { accessToken, hasDrive } from './drive.js';
 import { enqueueJob, registerJob, runDueJobs } from './jobs.js';
+import { pdmConfig, pdmUpload, pdmLinks } from './pdm.js';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS school_dirs(user_id TEXT NOT NULL, key TEXT NOT NULL, drive_id TEXT NOT NULL, PRIMARY KEY(user_id, key));
 CREATE TABLE IF NOT EXISTS school_folders(
   page_id TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE, user_id TEXT NOT NULL, drive_id TEXT NOT NULL,
   addenda_id TEXT, name TEXT NOT NULL DEFAULT '', parent_id TEXT, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS school_pdm(file_id TEXT PRIMARY KEY REFERENCES school_files(id) ON DELETE CASCADE, page_id TEXT NOT NULL, pdm_name TEXT NOT NULL, folder TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS school_files(
   id TEXT PRIMARY KEY, page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE, drive_id TEXT NOT NULL,
   name TEXT NOT NULL, mime TEXT NOT NULL DEFAULT '', size INTEGER NOT NULL DEFAULT 0,
@@ -193,6 +195,21 @@ const RUN = {
     await dcall(token, 'PATCH', `${API}/files/${row.drive_id}?fields=id${q}`, { name });
     db.prepare('UPDATE school_folders SET name=?, parent_id=? WHERE page_id=?').run(name, parent, page_id);
   },
+  /** Dépose le PDF de référence du chapitre dans PDM (dossiers année / matière / chapitre). */
+  async 'school.pdm_send'({ file_id, user_id }) {
+    const cfg = pdmConfig(); if (!cfg) return; // PDM n'est plus configuré : rien à faire
+    const f = db.prepare('SELECT * FROM school_files WHERE id=?').get(file_id);
+    if (!f || db.prepare('SELECT 1 FROM school_pdm WHERE file_id=?').get(file_id)) return;
+    const ctx = schoolContext(f.page_id); if (!ctx || ctx.isAddendum || !ctx.cfg.options?.pdf) return;
+    const token = await accessToken(user_id);
+    const r = await fetch(`${API}/files/${f.drive_id}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw err(`Google Drive : ${r.status}`, 502, { drive: r.status });
+    const buffer = Buffer.from(await r.arrayBuffer());
+    if (buffer.length > 95 * 1024 * 1024) throw Object.assign(err('PDF trop gros pour PDM (95 Mo maximum).'), { fatal: true });
+    const folder = [cleanName(ctx.db.title, 'Sans titre'), subjectOf(ctx.db, ctx.support), cleanName(ctx.support.title, 'Sans titre')].join('/');
+    const out = await pdmUpload(cfg, { buffer, filename: /\.pdf$/i.test(f.name) ? f.name : `${f.name}.pdf`, folder, source: `deepwell:${f.id}` });
+    db.prepare('INSERT OR REPLACE INTO school_pdm(file_id,page_id,pdm_name,folder,created_at) VALUES(?,?,?,?,?)').run(f.id, f.page_id, out.name, folder, now());
+  },
   async 'school.trash'({ user_id, drive_id }) {
     try { await dcall(await accessToken(user_id), 'PATCH', `${API}/files/${drive_id}?fields=id`, { trashed: true }); }
     catch (e) { if (e.drive !== 404) throw e; } // déjà supprimé sur Drive : rien à faire
@@ -220,9 +237,32 @@ const RUN = {
         addFile(pid, meta, 'link');
       }
     }
+    queuePdm(page_id, user_id);
   },
 };
 for (const [type, fn] of Object.entries(RUN)) registerJob(type, fn);
+
+const isPdf = (f) => f.mime !== FOLDER && (/pdf/i.test(f.mime) || /\.pdf$/i.test(f.name));
+/** Les PDF du support (page principale, pas les addenda) pas encore envoyés à PDM sont mis en file. Renvoie leur nombre. */
+export function queuePdm(pageId, userId, dry = false) {
+  const ctx = schoolContext(pageId);
+  if (!ctx?.drive || ctx.isAddendum || !ctx.cfg.options?.pdf || !pdmConfig()) return 0;
+  let n = 0;
+  for (const f of db.prepare('SELECT * FROM school_files WHERE page_id=?').all(ctx.support.id)) {
+    if (!isPdf(f) || db.prepare('SELECT 1 FROM school_pdm WHERE file_id=?').get(f.id)) continue;
+    n++; if (!dry) enqueueJob('school.pdm_send', { file_id: f.id, user_id: userId }, { maxAttempts: 6, dedupeKey: `pdm:${f.id}` });
+  }
+  if (n && !dry) setTimeout(() => runDueJobs().catch(() => {}), 50).unref();
+  return n;
+}
+/** Mise à jour de l'architecture : tous les supports de la base qui ont des PDF pas encore dans PDM. Renvoie { files, pending }. */
+export function schoolPdmBackfill(databaseId, userId, dry = false) {
+  const d = db.prepare('SELECT props FROM pages WHERE id=?').get(databaseId), cfg = parse(d?.props, {})?.dw_school;
+  if (!cfg?.enabled || !cfg.options?.drive || !cfg.options?.pdf || !pdmConfig()) return { enabled: false, files: 0 };
+  let files = 0;
+  for (const r of db.prepare("SELECT id FROM pages WHERE parent_id=? AND kind='page' AND archived=0").all(databaseId)) files += queuePdm(r.id, userId, dry);
+  return { enabled: true, files };
+}
 
 // ---------- appelés par pages.js ----------
 /** Après une modification de page : titre ou matière changés → dossier Drive à renommer / déplacer (en tâche de fond). */
@@ -259,7 +299,12 @@ schoolRouter.get('/pages/:id', wrap(async (req, res) => {
   if (!ctx?.drive) return res.json({ applicable: false });
   const folder = db.prepare('SELECT drive_id,addenda_id,user_id FROM school_folders WHERE page_id=?').get(ctx.support.id);
   const files = db.prepare('SELECT * FROM school_files WHERE page_id=? ORDER BY created_at').all(req.params.id).map(fileRow);
-  const out = { applicable: true, is_addendum: ctx.isAddendum, support_id: ctx.support.id, drive_connected: hasDrive(req.user.id), folder: !!folder, files, editable: can(role, 'edit') };
+  const pcfg = ctx.cfg.options?.pdf ? pdmConfig() : null;
+  if (pcfg && !ctx.isAddendum) { // liens PDM : éditeur (version annotée) et PDF d'origine ; « en attente » tant que le dépôt n'est pas fait
+    const rows = new Map(db.prepare('SELECT * FROM school_pdm WHERE page_id=?').all(req.params.id).map((r) => [r.file_id, r]));
+    for (const f of files) { const r = rows.get(f.id); if (r) f.pdm = pdmLinks(pcfg, r.pdm_name); else if (isPdf(f)) f.pdm_pending = true; }
+  }
+  const out = { applicable: true, is_addendum: ctx.isAddendum, support_id: ctx.support.id, drive_connected: hasDrive(req.user.id), folder: !!folder, files, editable: can(role, 'edit'), pdm: !!pcfg && !ctx.isAddendum };
   if (!ctx.isAddendum) { // « Tout télécharger » : fichiers du support et de ses addendums
     out.all_files = db.prepare(`SELECT f.*, p.title AS page_title FROM school_files f JOIN pages p ON p.id=f.page_id WHERE f.page_id IN (${descendants(ctx.support.id).map(() => '?').join(',')}) ORDER BY f.created_at`)
       .all(...descendants(ctx.support.id)).filter((f) => f.mime !== FOLDER).map((f) => ({ ...fileRow(f), where: f.page_id === ctx.support.id ? '' : 'Addenda' }));
@@ -294,7 +339,9 @@ schoolRouter.post('/pages/:id/files', wrap(async (req, res) => {
   const token = await accessToken(req.user.id), row = await ensureSupportFolder(req.user.id, ctx, token), target = await targetFolder(token, ctx, row);
   const f = await dcall(token, 'GET', `${API}/files/${driveId}?fields=id,name,mimeType,size,parents,trashed`);
   if (f.trashed || !f.parents?.includes(target)) throw err('Ce fichier n’est pas dans le dossier du chapitre.', 409);
-  res.json(fileRow(addFile(req.params.id, f, 'upload')));
+  const saved = addFile(req.params.id, f, 'upload');
+  res.json(fileRow(saved));
+  if (!ctx.isAddendum) queuePdm(ctx.support.id, req.user.id); // PDF de référence : déposé dans PDM (si l'option est active)
 }));
 
 schoolRouter.patch('/files/:fid', wrap(async (req, res) => {

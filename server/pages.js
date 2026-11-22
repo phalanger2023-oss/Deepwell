@@ -10,7 +10,7 @@ import { requireAuth } from './auth.js';
 import { accessFor, can, isDescendant } from './access.js';
 import { lockRouter, lockGuard, lockedIds, lockFor } from './locks.js';
 import { cleanProps } from './school.js';
-import { schoolPageChanged, schoolPagesDeleting } from './school-drive.js';
+import { schoolPageChanged, schoolPagesDeleting, schoolPdmBackfill } from './school-drive.js';
 import { templatesRoutes } from './templates.js';
 
 export const pagesRouter = express.Router();
@@ -146,7 +146,7 @@ pagesRouter.post('/', requireAuth, (req, res) => {
   res.json(pageRow(db.prepare('SELECT * FROM pages WHERE id=?').get(id)));
 });
 
-templatesRoutes(pagesRouter, { autoProps, defaultProps, schoolPageChanged, writeBlocks, snapshot });
+templatesRoutes(pagesRouter, { autoProps, defaultProps, schoolPageChanged, writeBlocks, snapshot, schoolPdmBackfill });
 
 pagesRouter.get('/:id', (req, res) => {
   const role = accessFor(req.user, req.params.id, token(req));
