@@ -673,9 +673,10 @@ a.sb-version { text-decoration: none; position: relative; padding-right: 10px; }
 .sf { margin: 0 0 18px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
 .sf-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; } .sf-head h3 { margin: 0; font-size: .95em; display: flex; align-items: center; gap: 6px; } .sf-btns { margin-left: auto; display: flex; gap: 6px; }
 .sf .btn { display: inline-flex; align-items: center; gap: 6px; } .sf-list { margin-top: 8px; display: grid; gap: 2px; }
-.sf-row { display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: var(--radius); } .sf-row:hover { background: var(--hover); }
-.sf-name { background: none; border: 0; padding: 0; text-align: left; color: inherit; cursor: pointer; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; } .sf-name:hover { text-decoration: underline; }
-.sf-actions { display: flex; gap: 2px; }
+.sf-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 3px 4px; min-width: 0; border-radius: var(--radius); } .sf-row:hover { background: var(--hover); }
+.sf-name { background: none; border: 0; padding: 0; text-align: left; color: inherit; cursor: pointer; flex: 1 1 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; } .sf-name:hover { text-decoration: underline; }
+.sf-actions { display: flex; flex-wrap: wrap; gap: 4px 2px; align-items: center; margin-left: auto; justify-content: flex-end; max-width: 100%; }
+.sf, .school-files-block { max-width: 100%; min-width: 0; box-sizing: border-box; } .sf-list { min-width: 0; }
 .sf-preview { margin-top: 10px; } .sf-prev-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; } .sf-prev-head .icon-btn { margin-left: auto; }
 .sf-frame { width: 100%; height: min(75vh, 720px); border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
 .school-tools { margin: 10px 0 4px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; } .school-tools .btn { display: inline-flex; align-items: center; gap: 6px; }

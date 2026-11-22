@@ -8,6 +8,7 @@ export const RELEASES = [
   {
     version: '3.4.11', date: '2026-11-22',
     nouveautes: [
+      'Fichiers du chapitre dans l’aperçu latéral : les boutons d’une ligne de fichier passent à la ligne au lieu de dépasser du cadre.',
       'Anciennes pages du recueil (créées avant le 22/11/2026) : pastille jaune « À mettre à jour » + bouton « Mettre à jour cette page ». Une fenêtre liste les blocs de la page (l’ancienne structure « Original / Modifié » est déjà cochée), tu valides, et le bouton « Nouvel addendum » est ajouté si besoin. Une version de secours est gardée dans l’historique. Après la mise à jour, la pastille et le bouton disparaissent. Les pages récentes ne les ont jamais.',
       'Version annotée : sur un PDF du chapitre, le bouton « Ajouter une version annotée » (ex. un PDF déjà annoté sur Canva) l’envoie sur Drive à côté de l’original, qui reste vierge, sous le nom « … (annoté).pdf ». Elle est déposée dans PDM comme document à part, modifiable, dans le même dossier. Une seule version annotée par original. Le bouton n’existe que pour les documents « à mettre à jour » (pastille jaune) et disparaît dès que la carte est mise à jour.',
       'Mode développeur : menu « ⋯ » d’une carte → « Marquer comme à mettre à jour » (remet la pastille, le bouton de mise à jour et l’option de version annotée, même sur une carte récente).',
