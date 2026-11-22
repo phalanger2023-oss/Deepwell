@@ -2,16 +2,17 @@
  * Blocs « bouton » : une mini-automatisation. La configuration (nom + suite d'actions) est enregistrée dans le bloc
  * ({ label, color, actions: [...] }) ; un clic exécute les actions dans l'ordre.
  *
- * Actions : insert_blocks · add_page · edit_property · open_page · open_url · confirm · notify
+ * Actions : insert_blocks · add_page (avec modèle au choix) · add_subpage · edit_property · open_page · open_url · confirm · notify
  * Variables utilisables dans les textes : {{date}} {{date_longue}} {{heure}} {{utilisateur}} {{titre}}
  */
-import { h, modal, toast, confirmBox, safeUrl } from './util.js';
+import { h, modal, toast, confirmBox, safeUrl, uuid } from './util.js';
 import { plainRt } from './richtext.js';
 import { vi } from './icons.js';
 
 export const ACTION_TYPES = [
   ['insert_blocks', 'Ajouter des blocs à cette page', 'plus'],
   ['add_page', 'Ajouter une page à une base de données', 'file-plus'],
+  ['add_subpage', 'Créer une sous-page de cette page', 'file-plus'],
   ['edit_property', 'Modifier une propriété de cette page', 'pencil'],
   ['open_page', 'Ouvrir une page', 'file-text'],
   ['open_url', 'Ouvrir un lien', 'external-link'],
@@ -48,6 +49,15 @@ export function parseBlocksText(text) {
   return out;
 }
 
+/** Éléments [type, texte, extra] (parseBlocksText) → blocs prêts à être enregistrés sur une page (format de l'éditeur). */
+export function blocksFromItems(items) {
+  return items.map(([type, text, extra]) => {
+    const rich = { rich_text: plainRt(text), color: 'default' };
+    const content = type === 'divider' ? {} : type.startsWith('heading_') ? { ...rich, is_toggleable: false } : type === 'to_do' ? { ...rich, checked: false, ...(extra || {}) } : type === 'paragraph' ? { ...rich, icon: null } : rich;
+    return { id: uuid(), parent_id: null, type, content };
+  });
+}
+
 /** Texte saisi → valeur de propriété au format Notion (selon le type de la propriété). */
 export function valueFor(def, text) {
   const t = String(text ?? '').trim(), type = def.type;
@@ -73,7 +83,8 @@ export function valueFor(def, text) {
 export function describe(a) {
   switch (a.type) {
     case 'insert_blocks': return `Ajouter ${parseBlocksText(a.text).length} bloc(s) — ${(WHERE.find(([k]) => k === (a.where || 'below')) || WHERE[0])[1].toLowerCase()}`;
-    case 'add_page': return `Ajouter une page « ${a.title || 'sans titre'} » dans ${a.database_title || 'une base'}`;
+    case 'add_page': return `Ajouter une page « ${a.title || a.template_title || 'sans titre'} » dans ${a.database_title || 'une base'}${a.template_id ? ` (modèle : ${a.template_title || '…'})` : ''}`;
+    case 'add_subpage': return `Créer la sous-page « ${a.title || 'sans titre'} »`;
     case 'edit_property': return `${a.prop || '?'} ← ${a.value ?? ''}`;
     case 'open_page': return `Ouvrir « ${a.title || 'une page'} »`;
     case 'open_url': return `Ouvrir ${a.url || 'un lien'}`;
@@ -103,6 +114,13 @@ export async function runButton(content, env) {
         case 'add_page': case 'edit_property':
           if (!env.hooks.buttonAction) throw new Error('action indisponible ici');
           await env.hooks.buttonAction(a); break;
+        case 'add_subpage': {
+          if (!env.hooks.buttonAction) throw new Error('action indisponible ici');
+          const p = await env.hooks.buttonAction(a);
+          env.insert([['child_page', '', { title: p?.title || a.title || 'Sans titre', page_id: p.id }]], a.where || 'below'); // lien vers la sous-page dans la page du bouton
+          if (a.open) { await env.hooks.saveNow?.(); location.hash = `#/page/${p.id}`; return true; }
+          break;
+        }
         default: throw new Error(`action inconnue (${a.type})`);
       }
     } catch (e) { toast(`Bouton interrompu — ${TYPE_LABEL[a.type] || a.type} : ${e.message}`, 'error'); return false; }
@@ -120,13 +138,14 @@ export function buttonDialog(content, hooks = {}) {
     const finish = (v) => { if (done) return; done = true; m.close(); resolve(v); };
     const body = h('div', { class: 'btn-dlg' });
     const m = modal('Configurer le bouton', body, { wide: true, onClose: () => finish(null) });
-    let dbs = null; const schemas = new Map();
+    let dbs = null; const schemas = new Map(), tpls = new Map();
     const getDbs = async () => (dbs ||= await (hooks.listDatabases?.() ?? []).catch(() => []));
     const getSchema = async (id) => {
       if (!id) return null;
       if (!schemas.has(id)) schemas.set(id, await (hooks.loadDatabase?.(id) ?? Promise.resolve(null)).then((d) => d?.schema || null).catch(() => null));
       return schemas.get(id);
     };
+    const getTemplates = async (id) => { if (!id) return []; if (!tpls.has(id)) tpls.set(id, await (hooks.listTemplates?.(id) ?? Promise.resolve([])).catch(() => [])); return tpls.get(id); };
     const field = (label, el, hint) => h('label', { class: 'btn-field' }, h('span', { class: 'btn-fl' }, label), el, hint ? h('span', { class: 'muted small' }, hint) : null);
     const input = (a, key, ph = '') => { const i = h('input', { class: 'input', value: a[key] ?? '', placeholder: ph }); i.addEventListener('input', () => { a[key] = i.value; }); return i; };
     const select = (a, key, options, onchange) => {
@@ -137,7 +156,7 @@ export function buttonDialog(content, hooks = {}) {
 
     async function draw() {
       await getDbs();
-      for (const a of c.actions) if (a.type === 'add_page') await getSchema(a.database_id);
+      for (const a of c.actions) if (a.type === 'add_page') { await getSchema(a.database_id); await getTemplates(a.database_id); }
       const pageSchema = hooks.pageSchema?.() || null;
       const label = h('input', { class: 'input', value: c.label ?? '', placeholder: 'Nom du bouton' });
       label.addEventListener('input', () => { c.label = label.value; });
@@ -154,7 +173,9 @@ export function buttonDialog(content, hooks = {}) {
           case 'add_page': {
             const sch = schemas.get(a.database_id), keys = sch ? Object.keys(sch).filter((k) => sch[k].type !== 'title') : [];
             f.push(field('Base de données', select(a, 'database_id', [['', '— choisir —'], ...(dbs || []).map((d) => [d.id, d.title || 'Sans titre'])], () => { a.database_title = (dbs || []).find((d) => d.id === a.database_id)?.title || ''; a.props = []; draw(); })),
-              field('Titre de la page', input(a, 'title', 'ex. Entrée du {{date_longue}}'), VARS));
+              ...(a.database_id ? [field('Modèle', select(a, 'template_id', [['', 'Page vide'], ...(tpls.get(a.database_id) || []).map((t) => [t.id, t.title || 'Sans titre'])], () => { a.template_title = (tpls.get(a.database_id) || []).find((t) => t.id === a.template_id)?.title || ''; draw(); }),
+                a.template_id ? 'La page reprend le contenu et les propriétés du modèle ; la date du jour remplace « @Today ».' : 'Les modèles se créent avec la flèche à côté de « Nouvelle ligne » dans la base.')] : []),
+              field('Titre de la page', input(a, 'title', a.template_id ? 'laisser vide = titre du modèle' : 'ex. Entrée du {{date_longue}}'), VARS));
             a.props ||= [];
             if (a.database_id) {
               f.push(h('div', { class: 'btn-props' }, h('div', { class: 'btn-fl' }, 'Propriétés'),
@@ -167,6 +188,12 @@ export function buttonDialog(content, hooks = {}) {
             f.push(h('label', { class: 'check' }, (() => { const x = h('input', { type: 'checkbox' }); x.checked = !!a.open; x.addEventListener('change', () => { a.open = x.checked; }); return x; })(), 'Ouvrir la page créée'));
             break;
           }
+          case 'add_subpage':
+            f.push(field('Titre de la sous-page', input(a, 'title', 'ex. Note du {{date_longue}}'), VARS),
+              field('Contenu de départ (facultatif)', (() => { const t = h('textarea', { class: 'input', rows: 4, placeholder: '## Titre\n- point\n[] à faire' }, a.text || ''); t.addEventListener('input', () => { a.text = t.value; }); return t; })(), 'Une ligne = un bloc, comme pour « Ajouter des blocs ».'),
+              field('Où mettre le lien vers la sous-page', select(a, 'where', WHERE)),
+              h('label', { class: 'check' }, (() => { const x = h('input', { type: 'checkbox' }); x.checked = !!a.open; x.addEventListener('change', () => { a.open = x.checked; }); return x; })(), 'Ouvrir la sous-page créée'));
+            break;
           case 'edit_property': {
             const dl = h('datalist', { id: `pl-${i}` }, Object.keys(pageSchema || {}).map((k) => h('option', { value: k })));
             const p = input(a, 'prop', 'Nom de la propriété'); p.setAttribute('list', `pl-${i}`);
@@ -190,7 +217,7 @@ export function buttonDialog(content, hooks = {}) {
           ...f);
       };
       const add = h('select', { class: 'input btn-add' }, h('option', { value: '' }, '＋ Ajouter une action…'), ACTION_TYPES.map(([k, l]) => h('option', { value: k }, l)));
-      add.addEventListener('change', () => { if (add.value) { c.actions.push({ type: add.value, ...(add.value === 'insert_blocks' ? { where: 'below' } : {}) }); draw(); } });
+      add.addEventListener('change', () => { if (add.value) { c.actions.push({ type: add.value, ...(add.value === 'insert_blocks' || add.value === 'add_subpage' ? { where: 'below' } : {}) }); draw(); } });
       body.replaceChildren(...[
         c.imported && !c.actions.length ? h('div', { class: 'btn-note' }, h('b', {}, 'Bouton importé de Notion. '), 'L’API de Notion ne communique ni le nom ni les actions d’un bouton : seul son emplacement a pu être conservé. Reconstituez ses actions ci-dessous ; elles seront gardées lors des prochains imports.') : null,
         field('Nom du bouton', label), h('div', { class: 'btn-field' }, h('span', { class: 'btn-fl' }, 'Couleur'), color),

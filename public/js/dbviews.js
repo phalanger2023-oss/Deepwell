@@ -46,6 +46,33 @@ function peekRow(r, onChange) {
   document.addEventListener('keydown', onKey, true);
 }
 
+/**
+ * « Attraper » le fond d'une vue avec la souris pour la faire défiler (comme une main sur une carte) : tableau, Kanban, galerie, liste, calendrier.
+ * Horizontal : le tableau ou le Kanban s'il déborde ; vertical : la page. Cartes, liens, boutons et champs gardent leur comportement normal.
+ */
+const NO_GRAB = 'button, input, select, textarea, label, th, [contenteditable="true"], [draggable="true"], .kb-card, .cal-ev, .add-col, .cal-plus';
+function grabScroll(body) {
+  body.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target.closest(NO_GRAB)) return;
+    const link = e.target.closest('a'), cardLink = link?.matches('.gal-card, .lst-row'); // cartes de la galerie et lignes de la liste : on peut les attraper, un simple clic les ouvre toujours
+    if (link && !cardLink) return;
+    if (cardLink) e.preventDefault(); // pas de « glisser le lien » du navigateur
+    const hs = e.target.closest('.kb-board, .db-scroll') || body.querySelector('.kb-board, .db-scroll'), vs = body.closest('.scroll') || document.scrollingElement;
+    const x0 = e.clientX, y0 = e.clientY, sx = hs ? hs.scrollLeft : 0, sy = vs ? vs.scrollTop : 0;
+    let on = false;
+    const move = (m) => {
+      if (!on) { if (Math.abs(m.clientX - x0) + Math.abs(m.clientY - y0) < 4) return; on = true; body.classList.add('panning'); getSelection()?.removeAllRanges(); }
+      if (hs && hs.scrollWidth > hs.clientWidth) hs.scrollLeft = sx - (m.clientX - x0);
+      if (vs) vs.scrollTop = sy - (m.clientY - y0);
+    };
+    const up = () => {
+      body.classList.remove('panning'); document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      if (on && cardLink) { const kill = (ev) => { ev.stopPropagation(); ev.preventDefault(); }; window.addEventListener('click', kill, true); setTimeout(() => window.removeEventListener('click', kill, true), 0); } // un glisser n'ouvre pas la fiche
+    };
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  });
+}
+
 export function renderDatabase(host, { page, rows, role, onChange }) {
   const editable = role === 'edit' || role === 'owner';
   const schema = page.schema || { Name: { id: 'title', name: 'Name', type: 'title', title: {} } };
@@ -118,6 +145,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
 
   // ---------- onglets de vues + barre d'outils ----------
   const body = h('div', { class: 'dbv-body' });
+  grabScroll(body);
   function draw() {
     const v = view();
     const tabs = h('div', { class: 'dbv-tabs' }, views.map((x) => h('button', { class: `dbv-tab ${x.id === activeId ? 'on' : ''}`, onclick: () => { activeId = x.id; try { localStorage.setItem(memoKey, activeId); } catch {} draw(); },
@@ -294,14 +322,24 @@ function drawBoard(root, v, c) {
     if (e.ctrlKey || e.target.closest('.kb-cards') || Math.abs(e.deltaY) <= Math.abs(e.deltaX) || board.scrollWidth <= board.clientWidth) return;
     e.preventDefault(); board.scrollLeft += e.deltaY;
   }, { passive: false });
-  // Glisser-déplacer le fond (ou l'en-tête d'une colonne) fait défiler, comme « attraper » le tableau.
-  board.addEventListener('mousedown', (e) => {
-    if (e.button !== 0 || e.target.closest('.kb-card, button, input, select, a') || !(e.target === board || e.target.closest('.kb-head'))) return;
-    const x0 = e.clientX, s0 = board.scrollLeft; board.classList.add('panning');
-    const move = (m) => { board.scrollLeft = s0 - (m.clientX - x0); };
-    const up = () => { board.classList.remove('panning'); document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
-    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
+  // Carte glissée vers un bord : le tableau (et la page, vers le haut / le bas de l'écran) défile tout seul.
+  let raf = 0, vx = 0, vy = 0, lastOver = 0;
+  const pageScroller = () => board.closest('.scroll') || document.scrollingElement;
+  // plus de survol (carte lâchée ailleurs) pendant 0,4 s : on s'arrête
+  const loop = () => { if ((!vx && !vy) || performance.now() - lastOver > 400) { vx = vy = 0; raf = 0; return; } board.scrollLeft += vx; if (vy) pageScroller().scrollTop += vy; raf = requestAnimationFrame(loop); };
+  const speed = (d, edge) => Math.min(26, 4 + Math.round((Math.min(d, edge) / edge) * 22));
+  board.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer?.types.includes('text/dw-row')) return;
+    lastOver = performance.now();
+    const r = board.getBoundingClientRect(), sc = pageScroller().getBoundingClientRect(), edge = 80;
+    vx = e.clientX < r.left + edge ? -speed(r.left + edge - e.clientX, edge) : e.clientX > r.right - edge ? speed(e.clientX - (r.right - edge), edge) : 0;
+    const top = Math.max(sc.top, 0), bottom = Math.min(sc.bottom, innerHeight);
+    vy = e.clientY < top + edge ? -speed(top + edge - e.clientY, edge) : e.clientY > bottom - edge ? speed(e.clientY - (bottom - edge), edge) : 0;
+    if ((vx || vy) && !raf) raf = requestAnimationFrame(loop);
   });
+  const stopAuto = () => { vx = vy = 0; };
+  board.addEventListener('dragleave', (e) => { const r = board.getBoundingClientRect(); if (e.clientX <= r.left || e.clientX >= r.right || e.clientY <= r.top || e.clientY >= r.bottom) stopAuto(); }); // (relatedTarget n'est pas fiable pendant un glisser)
+  board.addEventListener('drop', stopAuto); board.addEventListener('dragend', stopAuto);
   root.replaceChildren(wrap);
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(sync).observe(board);
   requestAnimationFrame(sync);

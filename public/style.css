@@ -358,7 +358,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .db-props { padding: 6px; min-width: 220px; } .db-props label { cursor: pointer; }
 /* kanban */
 .kb-wrap { position: relative; }
-.kb-board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; overflow-y: hidden; padding-bottom: 14px; cursor: grab; } .kb-board.panning { cursor: grabbing; user-select: none; }
+.kb-board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; overflow-y: hidden; padding-bottom: 14px; cursor: grab; } .dbv-body.panning, .dbv-body.panning * { cursor: grabbing !important; user-select: none !important; }
 .kb-nav { position: absolute; top: 40%; z-index: 3; width: 34px; height: 34px; display: none; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: var(--card); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; } .kb-nav:hover { background: var(--hover); }
 .kb-nav.prev { left: 4px; } .kb-nav.next { right: 4px; } .kb-wrap.can-prev .kb-nav.prev, .kb-wrap.can-next .kb-nav.next { display: grid; }
 .kb-col { display: flex; flex-direction: column; max-height: max(320px, calc(100vh - 320px)); cursor: default; width: 272px; flex: none; background: var(--sidebar-bg); border-radius: 8px; padding: 8px; transition: background .12s, box-shadow .12s; min-height: 80px; } .kb-col.over { box-shadow: 0 0 0 2px var(--accent) inset; }

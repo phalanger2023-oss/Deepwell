@@ -12,6 +12,10 @@ export const RELEASES = [
       'Mode scolaire : trois modèles de départ sont proposés une seule fois — « P.S.A. #00-26- » (Cours, Original, Modifié, Addenda avec « Émanant du P.S.A. » et « Lié à la P.S.A. »), « Fiche de révision » et « Exercices ». Ils se modifient et se suppriment librement, et ne reviennent pas une fois supprimés.',
     ],
     ameliorations: [
+      'Boutons : l’action « Ajouter une page à une base de données » propose maintenant un « Modèle » (page vide par défaut). La page créée reprend le contenu et les propriétés du modèle choisi, la date du jour remplace « @Today », et un titre saisi remplace celui du modèle. Dans une base en mode scolaire avec Drive, le dossier du chapitre est créé aussi.',
+      'Boutons : nouvelle action « Créer une sous-page de cette page », avec un titre, un contenu de départ facultatif (même écriture que « Ajouter des blocs »), l’endroit où placer le lien vers la sous-page, et l’option de l’ouvrir tout de suite.',
+      'Bases de données : on peut « attraper » le fond d’une vue avec la souris pour la faire défiler (tableau, Kanban, galerie, liste, calendrier). Les champs, les liens et les cartes du Kanban gardent leur comportement habituel, et un simple clic sur une carte de la galerie ou une ligne de la liste ouvre toujours la fiche.',
+      'Kanban : en glissant une carte près du bord gauche ou droit, le tableau défile tout seul vers les colonnes cachées (et la page défile en haut ou en bas de l’écran).',
       'Kanban : la vue tient maintenant dans l’écran. Chaque colonne a sa propre barre de défilement verticale, et la barre de défilement horizontale reste toujours visible en bas au lieu de se perdre sous la page.',
       'Kanban : deux flèches (gauche et droite) apparaissent sur les côtés pour passer d’un groupe de colonnes à l’autre. On peut aussi faire défiler avec la molette de la souris au-dessus du fond ou de l’en-tête d’une colonne, ou « attraper » le fond du tableau avec la souris pour le faire glisser.',
     ],

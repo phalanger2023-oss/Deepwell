@@ -4,13 +4,13 @@ import { createEditor } from './editor.js';
 import { propEditor, titleKey, typeIcon } from './database.js';
 import { renderDatabase } from './dbviews.js';
 import { openComments, openThreadsByBlock, openThreadCount } from './comments.js';
-import { rtPlain } from './richtext.js';
-import { prettify, formatDate, getPrefs, setPrefs, deviceTz, allTimezones } from './dates.js';
+import { rtPlain, plainRt } from './richtext.js';
+import { prettify, formatDate, getPrefs, setPrefs, deviceTz, allTimezones, todayIso } from './dates.js';
 import { iconNode, vi, pickIcon, kindIcon, makeIcon, parseIcon, ICON_COLORS } from './icons.js';
 import { popMenu, movePicker, autoClose } from './menus.js';
 import './math.js';
 import { loadingText, o5Page, redactedLine } from './clins.js';
-import { valueFor } from './buttons.js';
+import { valueFor, parseBlocksText, blocksFromItems } from './buttons.js';
 
 const S = { settings: {}, me: null, tree: { pages: [], shared: [], sharedRoots: [] }, current: null, editor: null, token: null, dirty: false, saving: null, sel: new Set(), anchor: null };
 const root = $('#app');
@@ -589,11 +589,23 @@ async function showPage(id) {
           if (!a.database_id) throw new Error('aucune base de données choisie');
           const d = await api.get(`/api/pages/${a.database_id}`), schema = d.page.schema || {}, props = {};
           for (const { name, value } of a.props || []) { const def = schema[name]; if (!def) continue; const v = valueFor(def, value); if (v) props[name] = v; }
-          const row = await api.post('/api/pages', { parent_id: a.database_id, title: a.title || '' });
+          let row;
+          if (a.template_id) { // depuis un modèle de la base : contenu et propriétés copiés, « @Today » remplacé ; un titre saisi remplace celui du modèle
+            row = await api.post(`/api/pages/${a.database_id}/from-template/${a.template_id}`, { today: todayIso() });
+            if (a.title) { props[titleKey(schema)] = { type: 'title', title: plainRt(a.title) }; await api.patch(`/api/pages/${row.id}`, { title: a.title }); }
+            const sc = d.page.props?.dw_school;
+            if (sc?.enabled && sc.options?.drive) { try { await api.post(`/api/school/pages/${row.id}/folder`); } catch (e) { toast(e.message, 'error'); } }
+          } else row = await api.post('/api/pages', { parent_id: a.database_id, title: a.title || '' });
           if (Object.keys(props).length) await api.patch(`/api/pages/${row.id}`, { props: { ...(row.props || {}), ...props } }); // garde les valeurs automatiques (numéros)
           dbCache.delete(a.database_id); refreshTree();
           toast(`Page ajoutée dans « ${prettify(d.page.title) || 'la base'} »`);
           if (a.open) { await flushSave(); location.hash = `#/page/${row.id}`; }
+        } else if (a.type === 'add_subpage') {
+          const p = await api.post('/api/pages', { parent_id: page.id, title: a.title || '' });
+          const items = parseBlocksText(a.text);
+          if (items.length) await api.put(`/api/pages/${p.id}/blocks`, { blocks: blocksFromItems(items) });
+          refreshTree(); toast(`Sous-page « ${a.title || 'Sans titre'} » créée`);
+          return { id: p.id, title: a.title || '' };
         } else if (a.type === 'edit_property') {
           const sch = data.parentSchema; if (!sch) throw new Error('cette page n’est pas une ligne de base de données');
           const def = sch[a.prop]; if (!def) throw new Error(`propriété « ${a.prop} » introuvable`);
@@ -603,6 +615,8 @@ async function showPage(id) {
           await api.patch(`/api/pages/${page.id}`, patch); S.needRefresh = true; toast(`« ${a.prop} » modifiée`);
         }
       },
+      saveNow: () => flushSave(),
+      listTemplates: (id) => api.get(`/api/pages/${id}/templates`),
       afterButton: async () => { if (S.needRefresh) { S.needRefresh = false; await flushSave(); showPage(page.id); } },
       moveBlockTo: S.token ? null : async (flat, label, onMoved) => {
         try {
