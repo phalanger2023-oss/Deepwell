@@ -8,6 +8,9 @@ import { requireAuth } from './auth.js';
 import { accessFor, can } from './access.js';
 
 const err = (message, status = 400) => Object.assign(new Error(message), { status });
+/** Ancienne page du recueil scolaire : créée avant le 22/11/2026 et pas encore modernisée (pastille jaune « À mettre à jour »). */
+const LEGACY_CUTOFF = Date.UTC(2026, 10, 22);
+export const isLegacyRow = (createdAt, props) => createdAt < LEGACY_CUTOFF && !props?.dw_arch;
 const TIME_PROPS = new Set(['created_time', 'last_edited_time', 'created_by', 'last_edited_by', 'unique_id']); // recalculées pour chaque nouvelle ligne
 
 const rt = (text, ann = {}) => ({ type: 'text', text: { content: text, link: null }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default', ...ann }, plain_text: text, href: null });
@@ -90,14 +93,13 @@ function resolveMentions(content, today) {
 
 export function templatesRoutes(router, { autoProps, defaultProps, schoolPageChanged, writeBlocks, snapshot, schoolPdmBackfill, schoolAddendaBackfill }) {
   // ---- Mise à jour d'UNE ancienne page du recueil (créée avant le 22/11/2026, pas encore modernisée) ----
-  const CUTOFF = Date.UTC(2026, 10, 22);
   const normT = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   const legacyRow = (req, id, level) => {
     const p = db.prepare("SELECT id,parent_id,kind,title,props,created_at FROM pages WHERE id=? AND kind='page'").get(id);
     if (!p || !p.parent_id || !can(accessFor(req.user, id), level)) throw err('Page introuvable', 404);
     const d = db.prepare("SELECT id,props FROM pages WHERE id=? AND kind='database'").get(p.parent_id);
     if (!parse(d?.props, {})?.dw_school?.enabled) return { p, legacy: false };
-    return { p, d, legacy: p.created_at < CUTOFF && !parse(p.props, {})?.dw_arch };
+    return { p, d, legacy: isLegacyRow(p.created_at, parse(p.props, {})) };
   };
   router.get('/:id/modernize', requireAuth, (req, res) => res.json({ legacy: legacyRow(req, req.params.id, 'view').legacy }));
   /** Aperçu (dry) : blocs de premier niveau, ceux de l'ancienne structure (Original / Modifié…) déjà cochés. Application : retire les blocs cochés (version de sauvegarde conservée). */

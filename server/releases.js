@@ -10,6 +10,8 @@ export const RELEASES = [
     nouveautes: [
       'Anciennes pages du recueil (créées avant le 22/11/2026) : pastille jaune « À mettre à jour » + bouton « Mettre à jour cette page ». Une fenêtre liste les blocs de la page (l’ancienne structure « Original / Modifié » est déjà cochée), tu valides, et le bouton « Nouvel addendum » est ajouté si besoin. Une version de secours est gardée dans l’historique. Après la mise à jour, la pastille et le bouton disparaissent. Les pages récentes ne les ont jamais.',
       'Mode développeur : clic droit sur la pastille → « Marquer comme modifiée » (retire pastille et bouton sans toucher à la page).',
+      'La pastille jaune apparaît aussi directement dans les vues de la base scolaire (tableau, Kanban, galerie, liste, calendrier), sur chaque ancienne page.',
+      'Icône de l’onglet du navigateur : celle de la page affichée ; sans icône de page, l’icône du site choisie dans Réglages → Apparence ; sinon l’icône par défaut.',
     ],
     ameliorations: [],
     corrections: [],

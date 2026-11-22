@@ -10,6 +10,7 @@ import { requireAuth } from './auth.js';
 import { accessFor, can, isDescendant } from './access.js';
 import { lockRouter, lockGuard, lockedIds, lockFor } from './locks.js';
 import { cleanProps } from './school.js';
+import { isLegacyRow } from './templates.js';
 import { schoolPageChanged, schoolPagesDeleting, schoolPdmBackfill, schoolAddendumChanged, schoolAddendaBackfill } from './school-drive.js';
 import { templatesRoutes } from './templates.js';
 
@@ -154,8 +155,9 @@ pagesRouter.get('/:id', (req, res) => {
   const p = db.prepare('SELECT * FROM pages WHERE id=?').get(req.params.id);
   const blocks = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(p.id)
     .map((b) => ({ ...b, content: parse(b.content, {}) }));
-  const children = db.prepare('SELECT id,kind,title,icon,cover,props,position FROM pages WHERE parent_id=? AND archived=0 AND kind != \'template\' ORDER BY position')
-    .all(p.id).map((c) => ({ ...c, props: p.kind === 'database' ? parse(c.props, {}) : undefined }));
+  const school = p.kind === 'database' && !!parse(p.props, {})?.dw_school?.enabled;
+  const children = db.prepare('SELECT id,kind,title,icon,cover,props,position,created_at FROM pages WHERE parent_id=? AND archived=0 AND kind != \'template\' ORDER BY position')
+    .all(p.id).map(({ created_at, ...c }) => ({ ...c, props: p.kind === 'database' ? parse(c.props, {}) : undefined, ...(school && c.kind === 'page' && isLegacyRow(created_at, parse(c.props, {})) ? { legacy: true } : {}) }));
   const crumbs = []; let cur = p.parent_id, g = 0;
   while (cur && g++ < 50) {
     const c = db.prepare('SELECT id,parent_id,title,icon,kind FROM pages WHERE id=?').get(cur);

@@ -32,7 +32,7 @@ function applySettings(s) {
   set('--content-width', /^\d+$/.test(s.content_width || '') ? `${s.content_width}px` : '');
   $('#custom-css').textContent = s.custom_css || '';
   document.title = s.site_name || 'Deepwell';
-  if ('favicon' in s) setFavicon(s.favicon);
+  if ('favicon' in s) { siteFavicon = s.favicon || ''; refreshFavicon(); }
   applyTheme();
 }
 const DEFAULT_FAVICON = document.querySelector('link[rel=icon]')?.getAttribute('href') || '';
@@ -48,11 +48,18 @@ async function faviconHref(icon) {
   const color = ICON_COLORS[p.color] || (/^#[0-9a-f]{3,8}$/i.test(p.color || '') ? p.color : '#2383e2');
   return wrap(`<rect width="32" height="32" rx="7" fill="${color}"/><g transform="translate(4 4)" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</g>`);
 }
+let siteFavicon = '', shownFavicon = null;
+/** Icône de l'onglet : celle de la page ouverte ; sans icône (ou hors d'une page), celle du site ; à défaut, l'icône de base. */
+function refreshFavicon() {
+  const icon = (S.current?.icon && parseIcon(S.current.icon) ? S.current.icon : '') || siteFavicon;
+  if (icon === shownFavicon) return;
+  shownFavicon = icon; setFavicon(icon);
+}
 function setFavicon(icon) {
   faviconHref(icon).catch(() => null).then((href) => {
     let l = document.querySelector('link[rel=icon]');
     if (!l) { l = document.createElement('link'); l.rel = 'icon'; document.head.append(l); }
-    l.setAttribute('href', href || DEFAULT_FAVICON);
+    if (icon === shownFavicon) l.setAttribute('href', href || DEFAULT_FAVICON); // on ignore une réponse arrivée après un changement de page
   });
 }
 function applyTheme() {
@@ -230,6 +237,7 @@ function favSection() {
     h('div', { class: 'sb-favs' }, items.map(row))];
 }
 function drawSidebar() {
+  refreshFavicon();
   if (!S.me) return;
   { const known = new Set([...S.tree.pages, ...S.tree.shared].map((p) => p.id)); for (const id of S.sel) if (!known.has(id)) S.sel.delete(id); }
   const open = new Set(store.get('dw_open', []));
@@ -588,7 +596,7 @@ async function showPage(id) {
           iconNode(c.icon, 20, kindIcon(c.kind)), h('span', { class: 'lst-title' }, prettify(c.title) || 'Sans titre'), c.kind !== 'database' && n ? h('span', { class: 'muted small' }, `${n} élément${n > 1 ? 's' : ''}`) : null);
       })) : h('div', { class: 'muted pad' }, 'Ce dossier est vide. Ajoutez-y des pages ou d’autres dossiers, ou déplacez-en avec « Déplacer vers… ».')));
   } else if (page.kind === 'database') {
-    renderDatabase(body, { page, rows: children.map((c) => ({ id: c.id, title: c.title, icon: c.icon, cover: c.cover, props: c.props || {} })), role, onChange: refreshTree });
+    renderDatabase(body, { page, rows: children.map((c) => ({ id: c.id, title: c.title, icon: c.icon, cover: c.cover, legacy: c.legacy, props: c.props || {} })), role, onChange: refreshTree });
   } else {
     const host = h('div', {});
     body.append(host);
@@ -604,7 +612,7 @@ async function showPage(id) {
       mountDatabase: async (host, dbId) => {
         const d = await api.get(`/api/pages/${dbId}${S.token ? `?token=${encodeURIComponent(S.token)}` : ''}`);
         if (d.page.kind !== 'database') return false;
-        renderDatabase(host, { page: d.page, rows: d.children.map((x) => ({ id: x.id, title: x.title, icon: x.icon, cover: x.cover, props: x.props || {} })), role: S.token ? 'view' : d.role, onChange: refreshTree });
+        renderDatabase(host, { page: d.page, rows: d.children.map((x) => ({ id: x.id, title: x.title, icon: x.icon, cover: x.cover, legacy: x.legacy, props: x.props || {} })), role: S.token ? 'view' : d.role, onChange: refreshTree });
         return true;
       },
       commentBlock: S.token ? null : (blockId, label, quote, anchor) => showComments(page, role, { block_id: blockId, label, quote, anchor }),

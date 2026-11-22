@@ -155,3 +155,13 @@ test('ancienne page : détection, aperçu, suppression choisie, bouton addendum,
   assert.equal((await api('GET', `/api/pages/${old2.id}/modernize`)).body.legacy, false);
   DB.setSetting('dev_mode', '0');
 });
+
+test('lignes d’une base scolaire : drapeau « legacy » renvoyé pour les anciennes pages seulement', async () => {
+  const d = (await api('POST', '/api/pages', { title: 'Recueil flag', kind: 'database' })).body;
+  await api('PATCH', `/api/pages/${d.id}`, { schema: { Name: { id: 'title', name: 'Name', type: 'title', title: {} } }, props: { dw_school: { enabled: true, options: {} } } });
+  const o = (await api('POST', '/api/pages', { title: 'Ancienne', parent_id: d.id })).body, n = (await api('POST', '/api/pages', { title: 'Nouvelle', parent_id: d.id })).body;
+  (await import('../server/db.js')).db.prepare('UPDATE pages SET created_at=? WHERE id=?').run(Date.UTC(2026, 9, 1), o.id);
+  const kids = (await api('GET', `/api/pages/${d.id}`)).body.children;
+  assert.equal(kids.find((k) => k.id === o.id).legacy, true); assert.ok(!kids.find((k) => k.id === n.id).legacy);
+  assert.ok(!('created_at' in kids[0]), 'created_at n’est pas exposé');
+});
