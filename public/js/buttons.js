@@ -42,6 +42,7 @@ export function parseBlocksText(text) {
     else if ((m = /^[-*•]\s+(.*)$/.exec(line))) out.push(['bulleted_list_item', m[1]]);
     else if ((m = /^\d+[.)]\s+(.*)$/.exec(line))) out.push(['numbered_list_item', m[1]]);
     else if ((m = /^\[(x| ?)\]\s*(.*)$/i.exec(line))) out.push(['to_do', m[2], { checked: m[1].toLowerCase() === 'x' }]);
+    else if ((m = /^!>\s*(.*)$/.exec(line))) out.push(['callout', m[1], { icon: { type: 'emoji', emoji: '⌛' }, color: 'gray_background' }]); // encadré (comme la date en haut d'un addendum)
     else if ((m = /^>\s+(.*)$/.exec(line))) out.push(['quote', m[1]]);
     else if (/^(-{3,}|_{3,})$/.test(line.trim())) out.push(['divider', '']);
     else out.push(['paragraph', line]);
@@ -49,11 +50,23 @@ export function parseBlocksText(text) {
   return out;
 }
 
+/** Texte d'un bloc de bouton → texte riche : « @Today » (ou « @Aujourd'hui ») devient une vraie date (mention de date) du jour. */
+export function richFromText(text) {
+  const base = { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' };
+  const out = [];
+  for (const part of String(text ?? '').split(/(@Today|@Aujourd['’]hui)/i)) {
+    if (!part) continue;
+    if (/^@(today|aujourd)/i.test(part)) { const d = new Date(); const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; out.push({ type: 'mention', mention: { type: 'date', date: { start: iso, end: null, time_zone: null } }, annotations: base, plain_text: iso, href: null }); }
+    else out.push({ type: 'text', text: { content: part, link: null }, annotations: base, plain_text: part, href: null });
+  }
+  return out;
+}
+
 /** Éléments [type, texte, extra] (parseBlocksText) → blocs prêts à être enregistrés sur une page (format de l'éditeur). */
 export function blocksFromItems(items) {
   return items.map(([type, text, extra]) => {
-    const rich = { rich_text: plainRt(text), color: 'default' };
-    const content = type === 'divider' ? {} : type.startsWith('heading_') ? { ...rich, is_toggleable: false } : type === 'to_do' ? { ...rich, checked: false, ...(extra || {}) } : type === 'paragraph' ? { ...rich, icon: null } : rich;
+    const rich = { rich_text: richFromText(text), color: 'default' };
+    const content = type === 'divider' ? {} : type.startsWith('heading_') ? { ...rich, is_toggleable: false } : type === 'to_do' ? { ...rich, checked: false, ...(extra || {}) } : type === 'callout' ? { ...rich, ...(extra || {}) } : type === 'paragraph' ? { ...rich, icon: null } : rich;
     return { id: uuid(), parent_id: null, type, content };
   });
 }
@@ -84,7 +97,7 @@ export function describe(a) {
   switch (a.type) {
     case 'insert_blocks': return `Ajouter ${parseBlocksText(a.text).length} bloc(s) — ${(WHERE.find(([k]) => k === (a.where || 'below')) || WHERE[0])[1].toLowerCase()}`;
     case 'add_page': return `Ajouter une page « ${a.title || a.template_title || 'sans titre'} » dans ${a.database_title || 'une base'}${a.template_id ? ` (modèle : ${a.template_title || '…'})` : ''}`;
-    case 'add_subpage': return `Créer la sous-page « ${a.title || 'sans titre'} »`;
+    case 'add_subpage': return `Créer la sous-page « ${a.title || 'sans titre'} »${a.template_page_id ? ` (modèle : ${a.template_title || '…'})` : ''}`;
     case 'edit_property': return `${a.prop || '?'} ← ${a.value ?? ''}`;
     case 'open_page': return `Ouvrir « ${a.title || 'une page'} »`;
     case 'open_url': return `Ouvrir ${a.url || 'un lien'}`;
@@ -188,12 +201,19 @@ export function buttonDialog(content, hooks = {}) {
             f.push(h('label', { class: 'check' }, (() => { const x = h('input', { type: 'checkbox' }); x.checked = !!a.open; x.addEventListener('change', () => { a.open = x.checked; }); return x; })(), 'Ouvrir la page créée'));
             break;
           }
-          case 'add_subpage':
+          case 'add_subpage': {
+            const area = h('textarea', { class: 'input', rows: 5, placeholder: '---\n!> @Today\n---\n## Titre\n- point\n[] à faire' }, a.text || ''); area.addEventListener('input', () => { a.text = area.value; });
             f.push(field('Titre de la sous-page', input(a, 'title', 'ex. Note du {{date_longue}}'), VARS),
-              field('Contenu de départ (facultatif)', (() => { const t = h('textarea', { class: 'input', rows: 4, placeholder: '## Titre\n- point\n[] à faire' }, a.text || ''); t.addEventListener('input', () => { a.text = t.value; }); return t; })(), 'Une ligne = un bloc, comme pour « Ajouter des blocs ».'),
+              field('Modèle : copier une page existante', h('div', { class: 'btn-row' },
+                h('button', { type: 'button', class: 'btn', onclick: async () => { const r = await hooks.pickPage?.(); if (r) { a.template_page_id = r.id; a.template_title = r.title; draw(); } } }, a.template_page_id ? `Page modèle : ${a.template_title || 'choisie'}` : 'Choisir une page modèle…'),
+                a.template_page_id ? h('button', { type: 'button', class: 'icon-btn', title: 'Ne plus utiliser de page modèle', onclick: () => { delete a.template_page_id; delete a.template_title; draw(); } }, vi('x', 14)) : null),
+                a.template_page_id ? 'La sous-page reprend tout le contenu de cette page (mise en forme, encadrés, séparateurs, boutons…). « @Today » du modèle devient la date du jour. Le texte ci-dessous est alors ignoré.' : 'Tout ce que contient la page choisie est copié dans la nouvelle sous-page : le plus simple pour une mise en page poussée.'),
+              ...(a.template_page_id ? [] : [field('Ou contenu écrit ici (facultatif)', area, 'Une ligne = un bloc : # titres, - puces, 1. numérotée, [] à faire, > citation, !> encadré, --- séparateur. « @Today » = la date du jour (vraie date). ' + VARS),
+                h('button', { type: 'button', class: 'btn small', title: 'Date du jour dans un encadré, entre deux séparateurs', onclick: () => { a.text = '---\n!> @Today\n---\n' + (a.text || ''); draw(); } }, '＋ En-tête d’addendum (date entre deux séparateurs)')]),
               field('Où mettre le lien vers la sous-page', select(a, 'where', WHERE)),
               h('label', { class: 'check' }, (() => { const x = h('input', { type: 'checkbox' }); x.checked = !!a.open; x.addEventListener('change', () => { a.open = x.checked; }); return x; })(), 'Ouvrir la sous-page créée'));
             break;
+          }
           case 'edit_property': {
             const dl = h('datalist', { id: `pl-${i}` }, Object.keys(pageSchema || {}).map((k) => h('option', { value: k })));
             const p = input(a, 'prop', 'Nom de la propriété'); p.setAttribute('list', `pl-${i}`);

@@ -146,7 +146,7 @@ pagesRouter.post('/', requireAuth, (req, res) => {
   res.json(pageRow(db.prepare('SELECT * FROM pages WHERE id=?').get(id)));
 });
 
-templatesRoutes(pagesRouter, { autoProps, defaultProps, schoolPageChanged });
+templatesRoutes(pagesRouter, { autoProps, defaultProps, schoolPageChanged, writeBlocks, snapshot });
 
 pagesRouter.get('/:id', (req, res) => {
   const role = accessFor(req.user, req.params.id, token(req));

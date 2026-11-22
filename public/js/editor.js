@@ -10,7 +10,7 @@ import { formatDate, prettify, pickDate, todayIso } from './dates.js';
 import { iconNode, vi, ICON_COLORS, kindIcon, parseIcon, pickIcon } from './icons.js';
 import { popMenu } from './menus.js';
 import { renderChart, aggregate, chartDialog } from './charts.js';
-import { buttonDialog, runButton, describe as describeAction } from './buttons.js';
+import { buttonDialog, runButton, describe as describeAction, richFromText } from './buttons.js';
 
 const TEXT_TYPES = new Set(['paragraph', 'heading_1', 'heading_2', 'heading_3', 'bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'quote', 'callout']);
 const MEDIA = { image: 'une image', file: 'un fichier', video: 'une vidéo', pdf: 'un PDF', audio: 'un audio' };
@@ -354,7 +354,7 @@ export function createEditor(host, { blocks, editable, hooks }) {
     if (r) { node.content = r; render(); changed(); }
   }
   function insertFromButton(button, items, where) {
-    const blocks = items.map(([t, text, extra]) => newBlock(t, t === 'divider' ? {} : { ...(BLOCK_DEFAULTS[t]?.() || {}), rich_text: plainRt(text), ...(extra || {}) }));
+    const blocks = items.map(([t, text, extra]) => newBlock(t, t === 'divider' ? {} : { ...(BLOCK_DEFAULTS[t]?.() || {}), rich_text: richFromText(text), ...(extra || {}) }));
     if (!blocks.length) return;
     if (where === 'start') tree.unshift(...blocks);
     else if (where === 'end') tree.push(...blocks);
@@ -653,6 +653,10 @@ export function createEditor(host, { blocks, editable, hooks }) {
       try { const p = await hooks.createSubpage(); place(newBlock('child_page', { title: p.title || 'Sans titre', page_id: p.id })); } catch (e) { toast(e.message, 'error'); }
     } else if (type === 'drive_file') {
       try { const f = await hooks.pickDrive(); if (f) place(newBlock('drive_file', { file_id: f.id, name: f.name, url: f.webViewLink, mimeType: f.mimeType, iconLink: f.iconLink })); } catch (e) { toast(e.message, 'error'); }
+    } else if (type === 'divider') { // un séparateur est toujours suivi d'un bloc de texte prêt à écrire
+      const nb = newBlock('divider'), nxt = newBlock('paragraph');
+      if (empty && node.children.length === 0) { const i = info(node.id); i.arr.splice(i.i, 1, nb, nxt); } else { insertAfter(node.id, nb); insertAfter(nb.id, nxt); }
+      render({ id: nxt.id }); changed();
     } else place(newBlock(type), type === 'equation' ? '[data-field=expression]' : undefined);
   }
 

@@ -1,4 +1,4 @@
-﻿import { h, $, toast, modal, ask, confirmBox, debounce, esc, fmtDate, fmtSize, safeUrl } from './util.js';
+﻿import { h, $, toast, modal, ask, confirmBox, debounce, esc, fmtDate, fmtSize, safeUrl, uuid } from './util.js';
 import { api } from './api.js';
 import { createEditor } from './editor.js';
 import { propEditor, titleKey, typeIcon } from './database.js';
@@ -602,8 +602,15 @@ async function showPage(id) {
           if (a.open) { await flushSave(); location.hash = `#/page/${row.id}`; }
         } else if (a.type === 'add_subpage') {
           const p = await api.post('/api/pages', { parent_id: page.id, title: a.title || '' });
-          const items = parseBlocksText(a.text);
-          if (items.length) await api.put(`/api/pages/${p.id}/blocks`, { blocks: blocksFromItems(items) });
+          let blocks = null;
+          if (a.template_page_id) { // modèle : le contenu d'une autre page est copié (blocs neufs ; « @Today » du modèle → date du jour)
+            const src = await api.get(`/api/pages/${a.template_page_id}`), kept = src.blocks.filter((b) => !['child_page', 'child_database'].includes(b.type)), ids = new Map(kept.map((b) => [b.id, uuid()])), today = todayIso();
+            const walk = (v) => Array.isArray(v) ? v.map(walk) : v && typeof v === 'object'
+              ? (v.type === 'mention' && v.mention?.type === 'template_mention' && /today|now/.test(JSON.stringify(v.mention.template_mention))
+                ? { ...v, mention: { type: 'date', date: { start: today, end: null, time_zone: null } }, plain_text: today } : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]))) : v;
+            blocks = kept.map((b) => ({ id: ids.get(b.id), parent_id: b.parent_id ? ids.get(b.parent_id) || null : null, type: b.type, content: walk(b.content) }));
+          } else { const items = parseBlocksText(a.text); if (items.length) { if (items[items.length - 1][0] === 'divider') items.push(['paragraph', '']); blocks = blocksFromItems(items); } } // jamais de séparateur en dernier : un bloc de texte prêt à écrire suit
+          if (blocks?.length) await api.put(`/api/pages/${p.id}/blocks`, { blocks });
           refreshTree(); toast(`Sous-page « ${a.title || 'Sans titre'} » créée`);
           return { id: p.id, title: a.title || '' };
         } else if (a.type === 'edit_property') {

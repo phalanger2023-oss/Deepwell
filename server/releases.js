@@ -6,6 +6,17 @@
  */
 export const RELEASES = [
   {
+    version: '3.4.5', date: '2026-11-22',
+    nouveautes: [
+      'Boutons → action « Créer une sous-page » : on peut maintenant choisir une page modèle existante dont tout le contenu (mise en forme, encadrés, séparateurs, boutons…) est copié dans la sous-page ; « @Today » dans le modèle devient la date du jour. Le contenu écrit à la main gagne aussi un encadré (ligne commençant par « !> ») et la vraie date du jour (« @Today »), et un bouton « ＋ En-tête d’addendum » met la date du jour dans un encadré entre deux séparateurs.',
+      'Mode scolaire : Réglages de la base → « Ajouter le bouton « Nouvel addendum »… ». Un aperçu indique les pages concernées, puis le bouton est ajouté dans chaque bloc déroulant de la section « Addenda » (créant un addendum avec la date du jour dans un encadré entre deux séparateurs). Les pages qui ont déjà un tel bouton ou pas de section « Addenda » ne sont pas touchées ; chaque page garde sa version d’avant dans l’historique. Le modèle « P.S.A. » de départ contient désormais ces boutons.',
+    ],
+    ameliorations: [
+      'Un séparateur ajouté par « / » est toujours suivi d’un bloc de texte prêt à écrire (comme pour « --- »). Une sous-page créée par un bouton ne se termine jamais par un séparateur.',
+    ],
+    corrections: [],
+  },
+  {
     version: '3.4.4', date: '2026-11-22',
     nouveautes: [
       'Base de données dans une page : clic droit sur son lien (ou appui long) → « Masquer l’aperçu (garder le lien) » / « Afficher l’aperçu de la base ». Le choix se fait base par base, et seul le lien reste quand l’aperçu est masqué.',

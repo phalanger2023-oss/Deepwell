@@ -13,6 +13,10 @@ const TIME_PROPS = new Set(['created_time', 'last_edited_time', 'created_by', 'l
 const rt = (text, ann = {}) => ({ type: 'text', text: { content: text, link: null }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default', ...ann }, plain_text: text, href: null });
 const mentionToday = () => ({ type: 'mention', mention: { type: 'template_mention', template_mention: { type: 'template_mention_date', template_mention_date: 'today' } }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }, plain_text: '@Today', href: null });
 
+/** Bouton « Nouvel addendum » : crée une sous-page dont l'en-tête est la date du jour dans un encadré, entre deux séparateurs (comme les addenda existants). */
+export const ADDENDUM_ACTION = { type: 'add_subpage', title: 'Addendum du {{date_longue}}', text: '---\n!> @Today\n---', where: 'below', open: true };
+const addendumButton = (parent = null) => ({ id: uid(), parent_id: parent, type: 'button', content: { label: '＋ Nouvel addendum', color: 'blue', actions: [{ ...ADDENDUM_ACTION }] } });
+
 /** Modèles de départ du mode scolaire. `props` est complété avec les valeurs « TBD » de la base si elles existent. */
 function starters() {
   const B = (type, content = {}, parent = null, id = uid()) => ({ id, parent_id: parent, type, content });
@@ -24,7 +28,7 @@ function starters() {
   // 1. Reproduit la fiche « P.S.A. #00-26- » (Cours, Original / Modifié, Addenda : Émanant du P.S.A. / Lié à la P.S.A.)
   const orig = head(2, 'Original : ', { is_toggleable: true }), modif = head(2, 'Modifié :', { is_toggleable: true });
   const e = toggle('Émanant du P.S.A.'), l = toggle('Lié à la P.S.A.');
-  const psa = [dateLine(), div(), head(1, 'Cours : '), orig, para('', orig.id), modif, para('', modif.id), div(), head(1, 'Addenda :'), e, para('', e.id), l, para('', l.id)];
+  const psa = [dateLine(), div(), head(1, 'Cours : '), orig, para('', orig.id), modif, para('', modif.id), div(), head(1, 'Addenda :'), e, addendumButton(e.id), para('', e.id), l, addendumButton(l.id), para('', l.id)];
   // 2. Fiche de révision
   const revision = [dateLine(), div(), head(1, 'À retenir'), para(), head(1, 'Définitions et formules'), para(), head(1, 'Exemples'), para(), head(1, 'Points à revoir'),
     B('to_do', { rich_text: [], checked: false, color: 'default' }), B('to_do', { rich_text: [], checked: false, color: 'default' })];
@@ -84,7 +88,42 @@ function resolveMentions(content, today) {
   return walk(content);
 }
 
-export function templatesRoutes(router, { autoProps, defaultProps, schoolPageChanged }) {
+export function templatesRoutes(router, { autoProps, defaultProps, schoolPageChanged, writeBlocks, snapshot }) {
+  /**
+   * Ajoute le bouton « Nouvel addendum » dans la section « Addenda » de chaque page (ligne ou modèle) de la base :
+   * dans chaque bloc déroulant de la section (ex. « Émanant du P.S.A. », « Lié à la P.S.A. »), ou juste sous le titre « Addenda » s'il n'y en a pas.
+   * Les pages qui ont déjà un bouton de création de sous-page dans cette section ne sont pas touchées. `dry` : aperçu seulement.
+   */
+  router.post('/:id/addenda-buttons', requireAuth, (req, res) => {
+    const d = dbOf(req, req.params.id, 'edit'), dry = req.body?.dry !== false;
+    const pages = db.prepare("SELECT id,title,kind FROM pages WHERE parent_id=? AND kind IN ('page','template') AND archived=0 ORDER BY position").all(d.id);
+    const plan = { total: pages.length, updated: [], already: [], no_section: [], buttons: 0 };
+    const plain = (b) => textOf(parse(b.content, {})).trim();
+    for (const p of pages) {
+      const list = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(p.id).map((b) => ({ ...b, content: parse(b.content, {}) }));
+      const top = list.filter((b) => !b.parent_id), hi = top.findIndex((b) => /^heading_/.test(b.type) && /^addenda/i.test(textOf(b.content).trim()));
+      const label = `${p.title || 'Sans titre'}${p.kind === 'template' ? ' (modèle)' : ''}`;
+      if (hi < 0) { plan.no_section.push(label); continue; }
+      const after = []; for (const b of top.slice(hi + 1)) { if (/^heading_1$/.test(b.type)) break; after.push(b); } // jusqu'au titre suivant
+      const sec = new Set(after.map((b) => b.id)); let grew = true; while (grew) { grew = false; for (const b of list) if (b.parent_id && sec.has(b.parent_id) && !sec.has(b.id)) { sec.add(b.id); grew = true; } }
+      if (list.some((b) => sec.has(b.id) && b.type === 'button' && (b.content.actions || []).some((a) => a.type === 'add_subpage'))) { plan.already.push(label); continue; }
+      const toggles = after.filter((b) => b.type === 'toggle'), adds = [];
+      if (toggles.length) for (const t of toggles) adds.push(addendumButton(t.id));
+      else adds.push({ ...addendumButton(null), after: top[hi].id });
+      plan.updated.push(label); plan.buttons += adds.length;
+      if (dry) continue;
+      tx(() => {
+        snapshot(p.id, req.user, 'Boutons « Nouvel addendum »', 0);
+        const out = list.map((b) => ({ id: b.id, parent_id: b.parent_id, type: b.type, content: b.content }));
+        for (const a of adds) {
+          const nb = { id: a.id, parent_id: a.parent_id, type: a.type, content: a.content };
+          if (a.after) { out.splice(out.findIndex((b) => b.id === a.after) + 1, 0, nb); } else out.unshift(nb); // premier enfant du bloc déroulant
+        }
+        writeBlocks(p.id, out);
+      });
+    }
+    res.json({ dry, ...plan });
+  });
   router.get('/:id/templates', requireAuth, (req, res) => {
     const d = dbOf(req, req.params.id, 'view');
     if (can(accessFor(req.user, d.id), 'edit')) seedIfNeeded(d);
