@@ -775,3 +775,8 @@ body.is-peek .cover + .page .page-icon { margin-top: -97px; }
 a.atom-page .vicon, .atom-page .vicon { margin-left: 1px; }
 .rt-title .atom { display: inline; padding: 0; background: transparent; white-space: normal; overflow: visible; font-weight: inherit; }
 .rt-title .atom-page { border-bottom: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); }
+.title-mention { position: fixed; z-index: 400; min-width: 240px; max-width: 360px; max-height: 300px; overflow: auto; }
+.title-mention button.sel { background: var(--hover); }
+h1.title .atom { font-size: inherit; display: inline; white-space: normal; }
+.lock-chip { display: inline-flex; align-items: center; gap: 5px; margin: 4px 0 0; padding: 2px 9px; font-size: .78rem; color: var(--muted); background: var(--hover); border: 0; border-radius: 999px; cursor: pointer; }
+.lock-chip:hover { color: var(--fg); }

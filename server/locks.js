@@ -116,7 +116,8 @@ lockRouter.put('/:id/lock', requireAuth, (req, res) => {
   db.prepare('INSERT INTO page_locks(page_id,hash,idle_min,created_at) VALUES(?,?,?,?) ON CONFLICT(page_id) DO UPDATE SET hash=excluded.hash, idle_min=excluded.idle_min')
     .run(id, hashPassword(pin), idle, now());
   gcalTouch(id); // une ligne verrouillée n'apparaît jamais dans Google Agenda
-  unlocked.set(`${sessKey(req)}|${id}`, now()); rememberCode(sessKey(req), String(pin)); // celui qui vient de définir le code reste connecté
+  // La page se verrouille aussitôt (il faut saisir le code pour la rouvrir) ; le même code mémorisé sur d'autres pages se referme avec elle.
+  unlocked.delete(`${sessKey(req)}|${id}`); codes.get(sessKey(req))?.delete(String(pin));
   res.json({ ok: true });
 });
 lockRouter.post('/:id/lock/remove', requireAuth, (req, res) => {

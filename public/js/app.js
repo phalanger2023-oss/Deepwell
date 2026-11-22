@@ -5,6 +5,7 @@ import { propEditor, titleKey, typeIcon } from './database.js';
 import { renderDatabase } from './dbviews.js';
 import { openComments, openThreadsByBlock, openThreadCount } from './comments.js';
 import { rtPlain, plainRt } from './richtext.js';
+import { titleToDom, domToRt, attachTitleMentions } from './titlemention.js';
 import { prettify, formatDate, getPrefs, setPrefs, deviceTz, allTimezones, todayIso } from './dates.js';
 import { iconNode, vi, pickIcon, kindIcon, makeIcon, parseIcon, ICON_COLORS } from './icons.js';
 import { popMenu, movePicker, autoClose } from './menus.js';
@@ -228,7 +229,7 @@ function favSection() {
       ondragleave: () => r.classList.remove('drop-above', 'drop-below'),
       ondrop: (e) => { if (!dragId || dragId === p.id) return; e.preventDefault(); e.stopPropagation(); const below = r.classList.contains('drop-below'); r.classList.remove('drop-above', 'drop-below'); reorder(dragId, p.id, below); },
       oncontextmenu: (e) => { e.preventDefault(); pageContextMenu(e.clientX, e.clientY, p); } },
-      h('a', { href: `#/page/${p.id}`, class: 'si-title' }, h('span', { class: 'si-icon' }, iconNode(p.icon, 18, kindIcon(p.kind))), h('span', { class: 'si-name' }, prettify(p.title) || 'Sans titre'), p.locked ? h('span', { class: 'si-lock', title: 'REDACTED' }, vi('lock', 12)) : null),
+      h('a', { href: `#/page/${p.id}`, class: 'si-title' }, h('span', { class: 'si-icon' }, iconNode(p.icon, 18, kindIcon(p.kind))), h('span', { class: 'si-name' }, prettify(p.title) || 'Sans titre'), (S.lockInfo?.open && S.lockInfo.pageId === p.id) ? h('span', { class: 'si-lock', title: 'Déverrouillée' }, vi('lock-open', 12)) : p.locked ? h('span', { class: 'si-lock', title: 'REDACTED' }, vi('lock', 12)) : null),
       h('button', { class: 'si-add si-unfav', title: 'Retirer des favoris', 'aria-label': 'Retirer des favoris', onclick: (e) => { e.preventDefault(); e.stopPropagation(); toggleFav(p); } }, vi('star', 14)));
     return r;
   };
@@ -534,11 +535,22 @@ async function showPage(id) {
 
   // les dates ISO « brutes » d'un titre importé s'affichent dans le fuseau horaire de l'utilisateur
   const title = h('h1', { class: 'title', 'data-ph': 'Sans titre', contenteditable: editable ? 'plaintext-only' : null }, prettify(page.title));
+  // titre riche (avec mentions @date / @page) : sur une ligne de base, c'est la propriété titre ; sinon props.dw_title_rt. Ignoré si le texte ne correspond plus au titre.
+  const richTitle = data.parentSchema ? page.props?.[titleKey(data.parentSchema)]?.title : page.props?.dw_title_rt;
+  if (Array.isArray(richTitle) && richTitle.some((r) => r.type === 'mention') && rtPlain(richTitle) === page.title) titleToDom(title, richTitle);
   if (editable) {
     const saveTitle = debounce(async () => {
-      const t = title.textContent.replace(/\n/g, ' ');
-      try { await api.patch(`/api/pages/${page.id}`, { title: t, ...(data.parentSchema ? { props: { ...page.props, [titleKey(data.parentSchema)]: { type: 'title', title: t ? [{ type: 'text', text: { content: t, link: null }, plain_text: t, annotations: {}, href: null }] : [] } } } : {}) }); page.title = t; const cr = document.querySelector('.crumbs > :last-child'); if (cr?.lastChild?.nodeType === 3) cr.lastChild.textContent = t || 'Sans titre'; document.title = `${t || 'Sans titre'} — ${S.settings.site_name || 'Deepwell'}`; const sp = S.tree.pages.find((p) => p.id === page.id); if (sp) { sp.title = t; drawSidebar(); } } catch (e) { toast(e.message, 'error'); }
+      const rt = domToRt(title), t = rtPlain(rt).replace(/\n/g, ' '), rich = rt.some((r) => r.type === 'mention');
+      try {
+        let props;
+        if (data.parentSchema) props = { ...page.props, [titleKey(data.parentSchema)]: { type: 'title', title: rt } };
+        else { props = { ...(page.props || {}) }; if (rich) props.dw_title_rt = rt; else delete props.dw_title_rt; }
+        const patch = { title: t }; if (data.parentSchema || rich || page.props?.dw_title_rt) patch.props = props;
+        await api.patch(`/api/pages/${page.id}`, patch); if (patch.props) page.props = props;
+        page.title = t; const cr = document.querySelector('.crumbs > :last-child'); if (cr?.lastChild?.nodeType === 3) cr.lastChild.textContent = prettify(t) || 'Sans titre'; document.title = `${prettify(t) || 'Sans titre'} — ${S.settings.site_name || 'Deepwell'}`; const sp = S.tree.pages.find((p) => p.id === page.id); if (sp) { sp.title = t; drawSidebar(); }
+      } catch (e) { toast(e.message, 'error'); }
     }, 500);
+    attachTitleMentions(title, { recentPages, searchPages: (q) => api.get(`/api/pages/search?q=${encodeURIComponent(q)}`), onChange: () => {} });
     title.addEventListener('input', () => saveTitle());
     title.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); S.editor?.focusFirst(); } });
   }
@@ -793,12 +805,23 @@ function lockScreen(id, info) {
   setTimeout(() => pin.focus(), 50);
 }
 /** Verrouillage automatique après inactivité : le minuteur est réarmé à chaque page, remis à zéro à chaque action de l'utilisateur. */
+/** Pastille « Déverrouillée » à côté du titre d'une page protégée par code qui est actuellement ouverte (clic : la reverrouiller). */
+function markLockOpen(pageId, tries = 0) {
+  document.querySelectorAll('.lock-chip').forEach((x) => x.remove());
+  const li = S.lockInfo; if (!li || li.pageId !== pageId || !li.open || !(li.own || li.inherited) || S.token) return;
+  const t = document.querySelector('.page h1.title');
+  if (!t) { if (tries < 8) setTimeout(() => markLockOpen(pageId, tries + 1), 150); return; }
+  t.after(h('button', { class: 'lock-chip', title: 'Cette page est protégée par un code et actuellement ouverte. Cliquer pour la reverrouiller.', onclick: async () => {
+    try { await flushSave(); await api.post(`/api/pages/${pageId}/lock/now`); showPage(pageId); } catch (e) { toast(e.message, 'error'); }
+  } }, vi('lock-open', 14), 'Déverrouillée · verrouiller'));
+}
 async function armIdleLock(pageId) {
   clearInterval(S.idleTimer); S.lockInfo = null;
   if (S.token) return;
   let li; try { li = await api.get(`/api/pages/${pageId}/lock`); } catch { return; }
   if (S.current?.id !== pageId) return;
-  S.lockInfo = { pageId, own: li.own, inherited: li.inherited, idle: li.idle_min };
+  S.lockInfo = { pageId, own: li.own, inherited: li.inherited, idle: li.idle_min, open: !!li.open };
+  markLockOpen(pageId); drawSidebar();
   if (!(li.own || li.inherited) || !li.idle_min) return;
   S.lastAct = Date.now();
   S.idleTimer = setInterval(async () => {
