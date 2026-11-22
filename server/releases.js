@@ -25,6 +25,8 @@ export const RELEASES = [
       'Icône de l’onglet du navigateur : celle de la page affichée ; sans icône de page, l’icône du site choisie dans Réglages → Apparence ; sinon l’icône par défaut.',
     ],
     ameliorations: [
+      'Bouton « Retour » du navigateur : en aperçu latéral, il ferme l’aperçu au lieu de quitter la base (Échap et la croix ne laissent pas d’entrée d’historique).',
+      'Titres des lignes de base de données (liste, galerie, Kanban, tableau) : les dates s’affichent lisiblement et les mentions de date / de page gardent leur style. Les mentions portent un « @ » et un gris plus foncé, comme sur Notion.',
       'Vues de base de données : l’ordre d’affichage des propriétés se choisit (menu « Propriétés » → flèches ▲ ▼), pour le tableau comme pour les cartes (Kanban, galerie, liste, calendrier). Les propriétés masquées sont rangées en dessous.',
       'Titres (et titres dépliants) : plus d’espace au-dessus, pour mieux séparer les sections.',
       'Performances : arbre des pages et grandes bases ~5 à 6 fois plus rapides (droits d’accès préparés une fois, vérification des verrous évitée quand il n’y en a pas), index SQLite supplémentaires, réglages SQLite (cache, écriture WAL), fichiers du site compressés une seule fois et gardés en mémoire.',],

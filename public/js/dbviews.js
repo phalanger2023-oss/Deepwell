@@ -3,13 +3,13 @@
  * Les vues sont enregistrées avec la base (champ `views`) ; les données restent au format Notion (propriétés, options, dates).
  */
 import { h, ask, modal, toast, confirmBox, safeUrl, uuid } from './util.js';
-import { rtPlain, plainRt } from './richtext.js';
+import { rtPlain, plainRt, richTitleNodes } from './richtext.js';
 import { api } from './api.js';
 import { redBar } from './clins.js';
 import { propText, propEditor, titleKey, sortKey, compareProps } from './database.js';
 import { vi, iconNode, ICON_COLORS } from './icons.js';
 import { autoClose } from './menus.js';
-import { toInputs, fromInputs, userTz, formatDate, todayIso } from './dates.js';
+import { toInputs, fromInputs, userTz, formatDate, todayIso, prettify } from './dates.js';
 
 const TYPES = [['table', 'Tableau', 'table'], ['board', 'Kanban', 'kanban'], ['calendar', 'Calendrier', 'calendar-days'], ['gallery', 'Galerie', 'layout-grid'], ['list', 'Liste', 'list']];
 const typeInfo = (t) => TYPES.find((x) => x[0] === t) || TYPES[0];
@@ -29,20 +29,34 @@ function propBadge(def, prop) {
 }
 
 /** Aperçu latéral d'une entrée (glisse depuis la droite) : la page complète, dans un cadre, avec « Ouvrir en plein écran ». */
+let activePeek = null; // aperçu latéral actuellement ouvert (un seul à la fois)
 function peekRow(r, onChange) {
-  document.querySelector('.peek-wrap')?.remove();
+  activePeek?.dispose(); // remplace l'aperçu précédent sans toucher à l'historique (son entrée est réutilisée)
+  const top = window === window.top; // un aperçu dans un aperçu : pas d'entrée d'historique supplémentaire
+  // Le bouton « Retour » du navigateur ferme l'aperçu : il occupe une entrée d'historique (même adresse) tant qu'il est ouvert.
+  const hadEntry = !!history.state?.dwPeek;
+  if (top && !hadEntry) history.pushState({ dwPeek: 1 }, '');
   const frame = h('iframe', { class: 'peek-frame', src: `/?peek=1#/page/${r.id}`, title: r.title || 'Entrée' });
   const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.modal, .ctx-menu, .palette')) close(); };
-  const close = async () => {
-    document.removeEventListener('keydown', onKey, true);
+  const onPop = () => close(null, true); // « Retour » du navigateur : l'entrée est déjà quittée
+  let done = false;
+  const dispose = () => { done = true; document.removeEventListener('keydown', onKey, true); window.removeEventListener('popstate', onPop); if (activePeek?.dispose === dispose) activePeek = null; wrap.remove(); };
+  const close = async (toHash, viaBack) => {
+    if (done) return; done = true;
+    document.removeEventListener('keydown', onKey, true); window.removeEventListener('popstate', onPop); if (activePeek?.dispose === dispose) activePeek = null;
     try { await frame.contentWindow?.__dwFlush?.(); } catch { /* cadre déjà fermé */ }
     wrap.classList.remove('in'); setTimeout(() => wrap.remove(), 180);
+    if (top && !viaBack && history.state?.dwPeek) { if (toHash) { location.replace(toHash); toHash = null; } else history.back(); } // on rend l'entrée d'historique (plein écran : elle est remplacée, pas empilée)
+    if (toHash) location.hash = toHash;
     window.dispatchEvent(new Event('dw-refresh-page')); onChange?.();
   };
-  const wrap = h('div', { class: 'peek-wrap' }, h('div', { class: 'peek-back', onclick: close }),
+  const wrap = h('div', { class: 'peek-wrap' }, h('div', { class: 'peek-back', onclick: () => close() }),
     h('aside', { class: 'peek', role: 'dialog', 'aria-label': 'Aperçu de l’entrée' }, h('div', { class: 'peek-head' },
-      h('button', { class: 'btn small', onclick: () => { close(); location.hash = `#/page/${r.id}`; } }, vi('maximize-2', 14), 'Ouvrir en plein écran'),
-      h('span', { class: 'ip-spacer' }), h('button', { class: 'icon-btn', title: 'Fermer (Échap)', 'aria-label': 'Fermer', onclick: close }, vi('x', 18))), frame));
+      h('button', { class: 'btn small', onclick: () => close(`#/page/${r.id}`) }, vi('maximize-2', 14), 'Ouvrir en plein écran'),
+      h('span', { class: 'ip-spacer' }), h('button', { class: 'icon-btn', title: 'Fermer (Échap)', 'aria-label': 'Fermer', onclick: () => close() }, vi('x', 18))), frame));
+  document.querySelector('.peek-wrap')?.remove();
+  activePeek = { dispose };
+  if (top) window.addEventListener('popstate', onPop);
   document.body.append(wrap); setTimeout(() => wrap.classList.add('in'), 20);
   document.addEventListener('keydown', onKey, true);
 }
@@ -79,7 +93,12 @@ function grabScroll(body) {
 
 /** Pastille jaune : ancienne page du recueil pas encore mise à jour (ouvrir la page pour la mettre à jour). */
 /** Titre d'une ligne : barre noire « expurgée » si la ligne est verrouillée. */
-const ttl = (r) => (r.locked ? h('span', { class: 'red-title' }, redBar(r.id), h('span', { class: 'red-tag' }, 'EXPURGÉ')) : (r.title || 'Sans titre'));
+const ttl = (r) => {
+  if (r.locked) return h('span', { class: 'red-title' }, redBar(r.id), h('span', { class: 'red-tag' }, 'EXPURGÉ'));
+  const rt = Object.values(r.props || {}).find((x) => x?.type === 'title')?.title; // titre riche : garde les mentions (@date, @page) si elles sont encore à jour
+  const nodes = rt && rtPlain(rt) === r.title ? richTitleNodes(rt) : null;
+  return nodes ? h('span', { class: 'rt-title' }, ...nodes) : (prettify(r.title) || 'Sans titre');
+};
 const legacyDot = (r) => (r.legacy ? h('span', { class: 'arch-dot', title: 'À mettre à jour : ouvre la page pour la moderniser', 'aria-label': 'À mettre à jour' }) : null);
 export function renderDatabase(host, { page, rows, role, onChange }) {
   const editable = role === 'edit' || role === 'owner';

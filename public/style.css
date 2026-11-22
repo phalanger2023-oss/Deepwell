@@ -768,3 +768,10 @@ body.is-peek .cover + .page .page-icon { margin-top: -97px; }
 .gcal-box > b { display: flex; align-items: center; gap: 6px; } .gcal-box > small { display: block; margin: 4px 0 8px; } .gcal-box .gcal-opts { display: grid; gap: 8px; margin-top: 8px; }
 .db-props .prop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; } .db-props .prop-lab { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; cursor: pointer; }
 .db-props .prop-move { display: inline-flex; gap: 0; } .db-props .prop-move .icon-btn[disabled] { opacity: .25; } .db-props .prop-sub { margin-top: 6px; font-size: .75em; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+/* Mentions façon Notion : « @ » devant les dates et les pages, gris foncé (texte, aperçus de titres de base de données) */
+.atom-date, a.atom-page, .atom-page, .atom-user { color: color-mix(in srgb, var(--fg) 62%, var(--bg)) !important; }
+.atom-date::before, .atom-page::before { content: '@'; margin-right: 1px; opacity: .8; }
+.atom-user::before { content: none; }
+a.atom-page .vicon, .atom-page .vicon { margin-left: 1px; }
+.rt-title .atom { display: inline; padding: 0; background: transparent; white-space: normal; overflow: visible; font-weight: inherit; }
+.rt-title .atom-page { border-bottom: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); }

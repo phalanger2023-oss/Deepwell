@@ -12,7 +12,7 @@ const itemOf = (content, st) => ({
 export const rtPlain = (rt) => (rt || []).map((r) => r.plain_text ?? r.text?.content ?? '').join('');
 export const plainRt = (text) => (text ? [itemOf(text, {})] : []);
 
-function atomLabel(r) {
+export function atomLabel(r) {
   if (r.type === 'equation') return r.equation?.expression || r.plain_text || '';
   if (r.type === 'mention') {
     const m = r.mention || {};
@@ -90,4 +90,18 @@ export function htmlToRt(root) {
   };
   walk(root, { ...DEF });
   return out;
+}
+
+/**
+ * Titre de ligne (cartes, listes, tableau…) avec ses mentions : dates lisibles, mentions de pages/personnes en « @ » grisé comme dans le texte.
+ * Rend des <span> seulement (la ligne entière est déjà un lien). Renvoie null s'il n'y a aucune mention (le titre texte suffit).
+ */
+export function richTitleNodes(rt) {
+  if (!(rt || []).some((r) => r.type === 'mention')) return null;
+  return rt.map((r) => {
+    if (r.type !== 'mention') return document.createTextNode(prettify(r.plain_text ?? r.text?.content ?? ''));
+    const kind = r.mention?.type || 'x', el = document.createElement('span');
+    el.className = `atom atom-${kind}`; el.textContent = kind === 'page' ? prettify(atomLabel(r)) : atomLabel(r);
+    return el;
+  });
 }
