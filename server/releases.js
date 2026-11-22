@@ -6,14 +6,22 @@
  */
 export const RELEASES = [
   {
-    version: '3.4.1', date: '2026-11-22',
+    version: '3.4.2', date: '2026-11-22',
     nouveautes: [
-      'Modèles de base de données : une petite flèche à côté de « Nouvelle ligne » ouvre la liste des modèles. Un clic sur un modèle crée une nouvelle ligne avec ses propriétés déjà remplies et son contenu prêt à annoter ; la date du jour remplace automatiquement « @Today ». On peut créer ses propres modèles, les modifier comme une page normale (la bannière en haut rappelle qu’on est dans un modèle), les dupliquer ou les supprimer depuis « Gérer les modèles ». Les modèles n’apparaissent ni dans le tableau, ni dans le Kanban, ni dans la recherche, et ne créent pas de dossier Drive.',
-      'Mode scolaire : trois modèles de départ sont proposés une seule fois — « P.S.A. #00-26- » (Cours, Original, Modifié, Addenda avec « Émanant du P.S.A. » et « Lié à la P.S.A. »), « Fiche de révision » et « Exercices ». Ils se modifient et se suppriment librement, et ne reviennent pas une fois supprimés.',
       'Valeurs par défaut : le bouton « Par défaut » d’une base permet de choisir, pour chaque propriété (sélection, statut, multi-sélection, case à cocher, nombre, texte, URL, e-mail, téléphone), la valeur que reçoit toute nouvelle ligne. Par exemple « Statut » = « À faire » : chaque nouvelle ligne arrive dans cette colonne du Kanban. Ça marche pour « Nouvelle ligne », les modèles (la valeur du modèle passe avant) et les boutons d’automatisation ; « Nouvelle carte » dans une colonne du Kanban garde la colonne choisie.',
     ],
     ameliorations: [
       'Kanban : une barre de navigation en haut du tableau (visible dès que les colonnes débordent) : on tire son curseur ou on clique dessus pour aller directement à l’endroit voulu. On peut aussi attraper une carte pour faire défiler en maintenant Maj, ou avec un clic molette (un glisser normal déplace toujours la carte).',
+    ],
+    corrections: [],
+  },
+  {
+    version: '3.4.1', date: '2026-11-22',
+    nouveautes: [
+      'Modèles de base de données : une petite flèche à côté de « Nouvelle ligne » ouvre la liste des modèles. Un clic sur un modèle crée une nouvelle ligne avec ses propriétés déjà remplies et son contenu prêt à annoter ; la date du jour remplace automatiquement « @Today ». On peut créer ses propres modèles, les modifier comme une page normale (la bannière en haut rappelle qu’on est dans un modèle), les dupliquer ou les supprimer depuis « Gérer les modèles ». Les modèles n’apparaissent ni dans le tableau, ni dans le Kanban, ni dans la recherche, et ne créent pas de dossier Drive.',
+      'Mode scolaire : trois modèles de départ sont proposés une seule fois — « P.S.A. #00-26- » (Cours, Original, Modifié, Addenda avec « Émanant du P.S.A. » et « Lié à la P.S.A. »), « Fiche de révision » et « Exercices ». Ils se modifient et se suppriment librement, et ne reviennent pas une fois supprimés.',
+    ],
+    ameliorations: [
       'Boutons : l’action « Ajouter une page à une base de données » propose maintenant un « Modèle » (page vide par défaut). La page créée reprend le contenu et les propriétés du modèle choisi, la date du jour remplace « @Today », et un titre saisi remplace celui du modèle. Dans une base en mode scolaire avec Drive, le dossier du chapitre est créé aussi.',
       'Boutons : nouvelle action « Créer une sous-page de cette page », avec un titre, un contenu de départ facultatif (même écriture que « Ajouter des blocs »), l’endroit où placer le lien vers la sous-page, et l’option de l’ouvrir tout de suite.',
       'Bases de données : on peut « attraper » le fond d’une vue avec la souris pour la faire défiler (tableau, Kanban, galerie, liste, calendrier). Les champs, les liens et les cartes du Kanban gardent leur comportement habituel, et un simple clic sur une carte de la galerie ou une ligne de la liste ouvre toujours la fiche.',
