@@ -6,6 +6,16 @@
  */
 export const RELEASES = [
   {
+    version: '3.4.4', date: '2026-11-22',
+    nouveautes: [
+      'Base de données dans une page : clic droit sur son lien (ou appui long) → « Masquer l’aperçu (garder le lien) » / « Afficher l’aperçu de la base ». Le choix se fait base par base, et seul le lien reste quand l’aperçu est masqué.',
+    ],
+    ameliorations: [],
+    corrections: [
+      'Kanban d’une base affichée dans une page : les cartes ne se déplaçaient pas à la souris (l’éditeur de la page bloquait le glisser). C’est corrigé, à la souris comme au doigt.',
+    ],
+  },
+  {
     version: '3.4.3', date: '2026-11-22',
     nouveautes: [],
     ameliorations: [

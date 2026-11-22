@@ -322,7 +322,7 @@ export function createEditor(host, { blocks, editable, hooks }) {
       case 'column_list': row.append(h('div', { class: 'columns' }, node.children.map((col) => h('div', { class: 'column', dataset: { id: col.id } }, renderList(col.children))))); el.classList.add('has-cols'); break;
       case 'child_page': case 'child_database': case 'link_to_page': {
         const id = c.page_id || c.database_id || c.id;
-        if (node.type === 'child_database' && id && hooks.mountDatabase) { row.append(inlineDatabase(id, c)); break; }
+        if (node.type === 'child_database' && id && hooks.mountDatabase && !c.no_preview) { row.append(inlineDatabase(id, c)); break; }
         row.append(h('a', { class: 'page-link', href: id ? `/#/page/${id}` : '#', contenteditable: 'false', dataset: { pid: id || '', kind: node.type } }, iconNode(null, 18, node.type === 'child_database' ? 'database' : 'file-text'), ' ', prettify(c.title) || 'Page')); break;
       }
       case 'drive_file': row.append(h('a', { class: 'drive-card', href: safeUrl(c.url), target: '_blank', rel: 'noopener noreferrer', contenteditable: 'false' },
@@ -418,6 +418,7 @@ export function createEditor(host, { blocks, editable, hooks }) {
     if (hooks.moveBlockTo) m.append(item('arrow-right', 'Déplacer vers…', () => hooks.moveBlockTo(flatten([cloneNode(node)]), nodePlain(node) || label,
       () => { removeNode(node.id); if (!tree.length) tree.push(newBlock('paragraph')); render(); changed(); })));
     if (node.type === 'button') m.append(item('settings-2', 'Configurer le bouton', () => configureButton(node)));
+    if (node.type === 'child_database') m.append(item(node.content.no_preview ? 'table' : 'eye-off', node.content.no_preview ? 'Afficher l’aperçu de la base' : 'Masquer l’aperçu (garder le lien)', () => { node.content.no_preview = node.content.no_preview ? undefined : true; if (!node.content.no_preview) delete node.content.no_preview; render({ id: node.id }); changed(); }));
     m.append(item('copy', 'Dupliquer', () => { const i = info(node.id); i.arr.splice(i.i + 1, 0, cloneNode(node)); render({ id: node.id }); changed(); }));
     if (hooks.commentBlock) m.append(item('message-square-plus', 'Commenter', () => hooks.commentBlock(node.id, label, nodePlain(node))));
     if (nodePlain(node)) m.append(item('text', 'Copier le texte', () => navigator.clipboard?.writeText(nodePlain(node)).then(() => toast('Texte copié'))));
@@ -982,6 +983,7 @@ export function createEditor(host, { blocks, editable, hooks }) {
   // glisser-déposer
   const dropLine = h('div', { class: 'drop-line', hidden: true, contenteditable: 'false' });
   host.addEventListener('dragstart', (e) => {
+    if (e.target.closest?.('.inline-db-body')) return; // une base intégrée gère elle-même ses glissers (cartes du Kanban, calendrier)
     const hd = e.target.closest?.('.handle');
     if (!hd) { if (editable && !e.target.closest?.('img,a,figure')) e.preventDefault(); return; } // pas de glisser-déposer de texte entre blocs
     dragId = hd.closest('.block').dataset.id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragId);
