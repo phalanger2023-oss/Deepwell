@@ -125,3 +125,33 @@ test('création depuis un modèle : titre et valeurs imposées (colonne du Kanba
   const r2 = (await api('POST', `/api/pages/${d.id}/from-template/${t.id}`, {})).body;
   assert.equal(r2.title, 'Mon modèle', 'sans titre donné : titre du modèle');
 });
+
+test('ancienne page : détection, aperçu, suppression choisie, bouton addendum, version de secours, marquage réservé au mode développeur', async () => {
+  const d = (await api('POST', '/api/pages', { title: 'Recueil ancien', kind: 'database' })).body;
+  await api('PATCH', `/api/pages/${d.id}`, { schema: { Name: { id: 'title', name: 'Name', type: 'title', title: {} } }, props: { dw_school: { enabled: true, options: {} } } });
+  const mk = async (title) => (await api('POST', `/api/pages`, { title, parent_id: d.id })).body;
+  const old = await mk('Vieux cours'), fresh = await mk('Récent');
+  const DB = await import('../server/db.js');
+  DB.db.prepare('UPDATE pages SET created_at=? WHERE id=?').run(Date.UTC(2026, 9, 1), old.id);
+  const T = (type, text, id, parent = null, extra = {}) => ({ id, parent_id: parent, type, content: { rich_text: [{ type: 'text', text: { content: text, link: null }, plain_text: text, annotations: {} }], ...extra } });
+  await api('PUT', `/api/pages/${old.id}/blocks`, { blocks: [T('heading_1', 'Cours :', 'a'), T('toggle', 'Original :', 'b'), T('paragraph', 'texte interne', 'c', 'b'), T('toggle', 'Modifié :', 'e'), T('heading_1', 'Addenda :', 'f'), T('toggle', 'Émanant du P.S.A.', 'g')] });
+  assert.equal((await api('GET', `/api/pages/${old.id}/modernize`)).body.legacy, true);
+  assert.equal((await api('GET', `/api/pages/${fresh.id}/modernize`)).body.legacy, false, 'une page récente n’est jamais concernée');
+  const plan = (await api('POST', `/api/pages/${old.id}/modernize`, { dry: true })).body;
+  assert.deepEqual(plan.blocks.filter((b) => b.suggested).map((b) => b.id), ['b', 'e']);
+  assert.equal(plan.blocks.find((b) => b.id === 'b').size, 2);
+  const r = (await api('POST', `/api/pages/${old.id}/modernize`, { dry: false, remove: ['b', 'e'] })).body;
+  assert.equal(r.removed, 3); assert.equal(r.buttons, 1);
+  const rest = (await api('GET', `/api/pages/${old.id}`)).body.blocks;
+  assert.deepEqual(rest.filter((b) => !b.parent_id).map((b) => b.id).sort(), ['a', 'f', 'g']);
+  assert.ok(rest.some((b) => b.type === 'button' && b.parent_id === 'g'));
+  assert.equal((await api('GET', `/api/pages/${old.id}/modernize`)).body.legacy, false, 'plus de pastille ni de bouton ensuite');
+  assert.equal((await api('POST', `/api/pages/${old.id}/modernize`, { dry: true })).status, 409);
+  // marquage manuel : refusé hors mode développeur
+  const old2 = await mk('Autre ancien'); DB.db.prepare('UPDATE pages SET created_at=? WHERE id=?').run(Date.UTC(2026, 9, 1), old2.id);
+  assert.equal((await api('POST', `/api/pages/${old2.id}/modernize/mark`)).status, 403);
+  DB.setSetting('dev_mode', '1');
+  assert.equal((await api('POST', `/api/pages/${old2.id}/modernize/mark`)).status, 200);
+  assert.equal((await api('GET', `/api/pages/${old2.id}/modernize`)).body.legacy, false);
+  DB.setSetting('dev_mode', '0');
+});

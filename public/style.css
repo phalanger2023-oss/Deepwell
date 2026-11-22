@@ -749,3 +749,8 @@ body.is-peek .cover + .page .page-icon { margin-top: -97px; }
 
 .kb-card { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; } .kb-card.dragging { opacity: .45; }
 .btn-row { display: flex; gap: 6px; align-items: center; }
+/* Ancienne page du recueil : pastille jaune + bouton de mise à jour */
+.arch-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 12px; border-radius: var(--radius); background: color-mix(in srgb, #f5c542 18%, transparent); }
+.arch-pill { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: #f5c542; color: #4a3a00; cursor: default; }
+.arch-list { max-height: 50vh; overflow: auto; margin: 10px 0; display: flex; flex-direction: column; gap: 2px; }
+.arch-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: var(--radius); cursor: pointer; } .arch-row:hover { background: var(--hover); }

@@ -3,7 +3,7 @@
  * donc éditable avec l'éditeur habituel (propriétés + contenu). Il n'apparaît ni dans le tableau, ni dans l'arbre, ni dans la recherche.
  * Créer une ligne « depuis un modèle » copie ses propriétés et ses blocs dans une nouvelle ligne ordinaire.
  */
-import { db, uid, now, tx, parse, textOf } from './db.js';
+import { db, uid, now, tx, parse, textOf, getSetting } from './db.js';
 import { requireAuth } from './auth.js';
 import { accessFor, can } from './access.js';
 
@@ -89,6 +89,54 @@ function resolveMentions(content, today) {
 }
 
 export function templatesRoutes(router, { autoProps, defaultProps, schoolPageChanged, writeBlocks, snapshot, schoolPdmBackfill, schoolAddendaBackfill }) {
+  // ---- Mise à jour d'UNE ancienne page du recueil (créée avant le 22/11/2026, pas encore modernisée) ----
+  const CUTOFF = Date.UTC(2026, 10, 22);
+  const normT = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const legacyRow = (req, id, level) => {
+    const p = db.prepare("SELECT id,parent_id,kind,title,props,created_at FROM pages WHERE id=? AND kind='page'").get(id);
+    if (!p || !p.parent_id || !can(accessFor(req.user, id), level)) throw err('Page introuvable', 404);
+    const d = db.prepare("SELECT id,props FROM pages WHERE id=? AND kind='database'").get(p.parent_id);
+    if (!parse(d?.props, {})?.dw_school?.enabled) return { p, legacy: false };
+    return { p, d, legacy: p.created_at < CUTOFF && !parse(p.props, {})?.dw_arch };
+  };
+  router.get('/:id/modernize', requireAuth, (req, res) => res.json({ legacy: legacyRow(req, req.params.id, 'view').legacy }));
+  /** Aperçu (dry) : blocs de premier niveau, ceux de l'ancienne structure (Original / Modifié…) déjà cochés. Application : retire les blocs cochés (version de sauvegarde conservée). */
+  router.post('/:id/modernize', requireAuth, (req, res) => {
+    const { p, legacy } = legacyRow(req, req.params.id, 'edit');
+    if (!legacy) throw err('Cette page est déjà à jour.', 409);
+    const list = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(p.id).map((b) => ({ id: b.id, parent_id: b.parent_id, type: b.type, content: parse(b.content, {}) }));
+    const kids = (id) => list.filter((b) => b.parent_id === id);
+    const count = (b) => 1 + kids(b.id).reduce((n, c) => n + count(c), 0);
+    const top = list.filter((b) => !b.parent_id);
+    const old = (b) => /^(titre )?(modifie|original)\b/.test(normT(textOf(b.content))) && ['toggle', 'heading_1', 'heading_2', 'heading_3', 'paragraph'].includes(b.type);
+    if (req.body?.dry !== false) return res.json({ dry: true, title: p.title, blocks: top.map((b) => ({ id: b.id, type: b.type, text: textOf(b.content).slice(0, 80), size: count(b), suggested: old(b) })) });
+    const remove = new Set((Array.isArray(req.body?.remove) ? req.body.remove : []).filter((id) => top.some((b) => b.id === id)));
+    let grew = true; while (grew) { grew = false; for (const b of list) if (b.parent_id && remove.has(b.parent_id) && !remove.has(b.id)) { remove.add(b.id); grew = true; } }
+    let out = list.filter((b) => !remove.has(b.id)), added = 0;
+    // le bouton « Nouvel addendum » doit être présent dans la section Addenda
+    const t2 = out.filter((b) => !b.parent_id), hi = t2.findIndex((b) => /^heading_/.test(b.type) && /^addenda/i.test(textOf(b.content).trim()));
+    if (hi >= 0 && !out.some((b) => b.type === 'button' && (b.content.actions || []).some((a) => a.type === 'add_subpage'))) {
+      const after = []; for (const b of t2.slice(hi + 1)) { if (b.type === 'heading_1') break; after.push(b); }
+      const toggles = after.filter((b) => b.type === 'toggle');
+      if (toggles.length) for (const t of toggles) { out.unshift(addendumButton(t.id)); added++; }
+      else { out.splice(out.findIndex((b) => b.id === t2[hi].id) + 1, 0, addendumButton(null)); added++; }
+    }
+    tx(() => {
+      snapshot(p.id, req.user, 'Mise à jour de la page (nouvelle architecture)', 0);
+      writeBlocks(p.id, out);
+      const props = { ...(parse(p.props, {}) || {}), dw_arch: 'done' };
+      db.prepare('UPDATE pages SET props=?, updated_at=? WHERE id=?').run(JSON.stringify(props), now(), p.id);
+    });
+    res.json({ ok: true, removed: remove.size, buttons: added });
+  });
+  /** Mode développeur : « Marquer comme modifiée » (retire la pastille et le bouton sans toucher au contenu). */
+  router.post('/:id/modernize/mark', requireAuth, (req, res) => {
+    if (getSetting('dev_mode', '0') !== '1') throw err('Cette action nécessite le mode développeur (Réglages → Développeur).', 403);
+    const { p } = legacyRow(req, req.params.id, 'edit');
+    db.prepare('UPDATE pages SET props=?, updated_at=? WHERE id=?').run(JSON.stringify({ ...(parse(p.props, {}) || {}), dw_arch: 'done' }), now(), p.id);
+    res.json({ ok: true });
+  });
+
   /**
    * « Mettre à jour l'architecture » d'une base scolaire (aperçu avec `dry`, sinon application) :
    *  1. retire les boutons sans aucune action (pages et modèles de la base) ;

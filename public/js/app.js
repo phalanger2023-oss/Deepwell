@@ -473,6 +473,22 @@ async function flushSave(keepalive = false) {
 const scheduleSave = debounce(() => flushSave(), 700);
 
 /** Une page d'une base (ou sous-page d'une ligne de base) peut être un chapitre scolaire : on charge alors le panneau des fichiers. */
+/** Mise à jour d'une ancienne page : liste des blocs de premier niveau (ceux de l'ancienne structure déjà cochés), confirmation, application. */
+async function modernizeDialog(page, onDone) {
+  let plan; try { plan = await api.post(`/api/pages/${page.id}/modernize`, { dry: true }); } catch (e) { toast(e.message, 'error'); return; }
+  const checks = plan.blocks.map((b) => h('input', { type: 'checkbox', checked: b.suggested ? true : null }));
+  const label = (t) => ({ toggle: 'Bloc déroulant', heading_1: 'Titre 1', heading_2: 'Titre 2', heading_3: 'Titre 3', paragraph: 'Texte', callout: 'Encadré', divider: 'Séparateur', button: 'Bouton' }[t] || t);
+  const rows = plan.blocks.map((b, i) => h('label', { class: 'arch-row' }, checks[i], h('span', { class: 'muted small' }, label(b.type)), h('span', {}, b.text || '(vide)'), b.size > 1 ? h('span', { class: 'muted small' }, `+ ${b.size - 1} bloc(s) à l’intérieur`) : null));
+  const m = modal('Mettre à jour cette page', h('div', {},
+    h('p', {}, 'Coche ce qui doit être retiré (l’ancienne structure « Original / Modifié » est déjà cochée). Le bouton « Nouvel addendum » est ajouté dans la section Addenda s’il manque. Une version de secours de la page est conservée : tu peux revenir en arrière depuis l’historique.'),
+    h('div', { class: 'arch-list' }, rows.length ? rows : h('p', { class: 'muted' }, 'La page est vide.')),
+    h('div', { class: 'row-end' }, h('button', { class: 'btn', onclick: () => m.close() }, 'Annuler'),
+      h('button', { class: 'btn primary', onclick: async (e) => {
+        e.currentTarget.disabled = true;
+        try { const r = await api.post(`/api/pages/${page.id}/modernize`, { dry: false, remove: plan.blocks.filter((_, i) => checks[i].checked).map((b) => b.id) }); m.close(); toast(`Page mise à jour (${r.removed} bloc(s) retiré(s)${r.buttons ? `, ${r.buttons} bouton(s) ajouté(s)` : ''})`); onDone?.(); }
+        catch (err) { toast(err.message, 'error'); e.currentTarget.disabled = false; }
+      } }, 'Mettre à jour'))));
+}
 const hasDbAncestor = (p) => { let c = S.pageMap?.get(p.parent_id), n = 0; while (c && n++ < 5) { if (c.kind === 'database') return true; c = S.pageMap.get(c.parent_id); } return false; };
 async function showPage(id) {
   S.editor?.destroy(); S.editor = null; S.current = null; S.dirty = false; S.tocCleanup?.(); S.tocCleanup = null;
@@ -530,6 +546,21 @@ async function showPage(id) {
     const dbc = crumbs[crumbs.length - 1];
     parts[1].append(h('div', { class: 'banner tpl-banner' }, vi('file-text', 16), h('span', {}, ' Modèle de la base ', h('b', {}, dbc?.title || ''), '. Chaque nouvelle ligne créée depuis ce modèle reprend ses propriétés et son contenu. ',
       dbc ? h('a', { href: `#/page/${dbc.id}` }, 'Retour à la base') : null)));
+  }
+  if (editable && data.parentSchema && page.kind === 'page') { // ancienne page d'un recueil scolaire : pastille jaune + bouton de mise à jour
+    const archHost = h('div', { class: 'arch-host' });
+    parts[1].append(archHost);
+    api.get(`/api/pages/${page.id}/modernize`).then((st) => {
+      if (!st.legacy) return;
+      const pill = h('span', { class: 'arch-pill', title: S.settings.dev_mode === '1' ? 'Clic droit : marquer comme modifiée' : 'Cette page utilise l’ancienne structure' }, '● À mettre à jour');
+      pill.addEventListener('contextmenu', (e) => {
+        if (S.settings.dev_mode !== '1') return;
+        e.preventDefault();
+        import('./menus.js').then(({ popMenu }) => popMenu(e.clientX, e.clientY, [{ label: 'Marquer comme modifiée', icon: 'check', fn: async () => { await api.post(`/api/pages/${page.id}/modernize/mark`); toast('Page marquée comme modifiée'); showPage(page.id); } }]));
+      });
+      archHost.append(h('div', { class: 'arch-banner' }, pill, h('span', { class: 'muted small' }, 'Cette page garde l’ancienne structure du recueil.'),
+        h('button', { class: 'btn small', onclick: () => modernizeDialog(page, () => showPage(page.id)) }, vi('refresh-cw', 14), 'Mettre à jour cette page')));
+    }).catch(() => {});
   }
   if (!S.token && S.me && page.kind !== 'database' && page.kind !== 'template' && (data.parentSchema || crumbs.slice(-5).some((c) => c.kind === 'database'))) {
     const schoolHost = h('div', { class: 'school-files-host' });
