@@ -8,6 +8,7 @@ import { saveFile } from './files.js';
 import { importNotionIcon } from './icons-local.js';
 import { requireAuth } from './auth.js';
 import { accessFor, can, isDescendant } from './access.js';
+import { gcalTouch } from './gcal.js';
 import { lockRouter, lockGuard, lockedIds, closedIds, lockFor } from './locks.js';
 import { cleanProps } from './school.js';
 import { isLegacyRow } from './templates.js';
@@ -230,6 +231,7 @@ pagesRouter.patch('/:id', requireAuth, (req, res) => {
     }
   });
   schoolPageChanged(id); // mode scolaire : titre ou matière changés → dossier Drive à aligner (tâche de fond)
+  gcalTouch(id); // base synchronisée avec Google Agenda : mise à jour de l'événement (tâche de fond)
   res.json({ ok: true });
 });
 
@@ -263,6 +265,7 @@ pagesRouter.post('/:id/duplicate', requireAuth, (req, res) => {
     }
     return newId;
   });
+  gcalTouch(result);
   res.json(pageRow(db.prepare('SELECT * FROM pages WHERE id=?').get(result)));
 });
 
@@ -271,6 +274,7 @@ pagesRouter.delete('/:id', requireAuth, (req, res) => {
   const role = accessFor(req.user, req.params.id);
   if (!can(role, 'edit')) return res.status(403).json({ error: 'Droits insuffisants' });
   const isTpl = db.prepare("SELECT 1 FROM pages WHERE id=? AND kind='template'").get(req.params.id);
+  gcalTouch(req.params.id); // programmé avec 5 s de recul : la suppression est faite quand la tâche s'exécute
   if (isTpl) db.prepare('DELETE FROM pages WHERE id=?').run(req.params.id); // modèle : suppression définitive, sans corbeille
   else if (req.query.permanent === '1') {
     if (role !== 'owner') return res.status(403).json({ error: 'Seul le propriétaire peut supprimer définitivement' });

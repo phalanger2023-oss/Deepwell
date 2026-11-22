@@ -17,6 +17,7 @@ import { startJobWorker } from './jobs.js';
 import { schoolRouter } from './school-drive.js';
 import { pdmRouter } from './pdm.js';
 import { pingRouter, activityRouter } from './activity.js';
+import { gcalRouter, startGcalSweep } from './gcal.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const app = express();
@@ -59,6 +60,7 @@ app.use('/api/pages', pagesRouter);
 app.use('/api/drive', driveRouter);
 app.use('/api/school', schoolRouter);
 app.use('/api/pdm', pdmRouter);
+app.use('/api/gcal', gcalRouter);
 app.use('/api/activity', pingRouter);
 app.use('/api/admin/activity', activityRouter);
 
@@ -137,6 +139,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (admin) await uploadBackupToDrive(admin.id, b.name);
   });
   startJobWorker();
+  startGcalSweep();
   localizeRemoteIcons().then((n) => n && console.log(`Icônes Notion rapatriées : ${n}`)).catch(() => {});
   app.listen(port, process.env.HOST || '0.0.0.0', () => console.log(`Deepwell : http://localhost:${port}`));
 }

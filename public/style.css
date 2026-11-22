@@ -765,3 +765,4 @@ body.is-peek .cover + .page .page-icon { margin-top: -97px; }
 .red-tag { font: 600 .62em/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .12em; color: #b3261e; border: 1px solid currentColor; padding: 2px 4px; border-radius: 2px; white-space: nowrap; }
 .row-locked td { color: var(--muted); } .row-locked .open-row { color: var(--muted); }
 .card-locked { cursor: pointer; background-image: repeating-linear-gradient(135deg, transparent 0 8px, rgba(128,128,128,.07) 8px 16px); }
+.gcal-box > b { display: flex; align-items: center; gap: 6px; } .gcal-box > small { display: block; margin: 4px 0 8px; } .gcal-box .gcal-opts { display: grid; gap: 8px; margin-top: 8px; }

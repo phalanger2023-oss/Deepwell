@@ -6,6 +6,7 @@
 import { h, modal, toast } from './util.js';
 import { api } from './api.js';
 import { vi } from './icons.js';
+import { gcalSection } from './gcal.js';
 
 // [clé, titre, description, disponible] — « disponible » passe à true quand la fonction est livrée
 export const SCHOOL_OPTIONS = [
@@ -134,6 +135,7 @@ export function openDatabaseSettings(page, { onSaved } = {}) {
   sw.addEventListener('change', () => change(() => { state.enabled = sw.checked; }));
   drawList();
   modal('Réglages de la base', h('div', { class: 'school' },
+    gcalSection(page), h('hr'),
     h('label', { class: 'school-main' }, sw, h('span', { class: 'school-txt' },
       h('b', {}, vi('graduation-cap', 16), 'Mode scolaire'),
       h('small', { class: 'muted' }, 'Regroupe les fonctions pour les cours. Désactivé, la base se comporte comme une base ordinaire.'))),

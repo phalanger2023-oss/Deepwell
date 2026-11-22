@@ -13,7 +13,8 @@ import { db, secretKey } from './db.js';
 import { requireAuth } from './auth.js';
 import { backupPath } from './backup.js';
 
-const SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file', 'openid', 'email'];
+export const CAL_SCOPES = ['https://www.googleapis.com/auth/calendar.app.created', 'https://www.googleapis.com/auth/calendar.events']; // agenda dédié « DeepWell » + événements de l'agenda principal
+const SCOPES = ['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file', ...CAL_SCOPES, 'openid', 'email'];
 const cfg = () => ({
   id: process.env.GOOGLE_CLIENT_ID, secret: process.env.GOOGLE_CLIENT_SECRET,
   redirect: `${(process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '')}/api/drive/callback`,
@@ -43,16 +44,20 @@ export async function accessToken(userId) {
 export const driveRouter = express.Router();
 export const driveCallback = express.Router();
 
+try { db.exec('ALTER TABLE drive_tokens ADD COLUMN scope TEXT'); } catch { /* colonne déjà là */ }
+/** Le compte relié a-t-il autorisé Google Agenda ? (les anciennes connexions, faites avant, doivent être refaites une fois) */
+export const hasCalendarScope = (userId) => { const t = db.prepare('SELECT scope FROM drive_tokens WHERE user_id=?').get(userId); return !!t?.scope && CAL_SCOPES.every((c) => t.scope.includes(c)); };
+
 driveRouter.get('/status', requireAuth, (req, res) => {
   const t = db.prepare('SELECT email FROM drive_tokens WHERE user_id=?').get(req.user.id);
-  res.json({ configured: driveConfigured(), connected: !!t, email: t?.email || null, redirect: cfg().redirect });
+  res.json({ configured: driveConfigured(), connected: !!t, email: t?.email || null, calendar: !!t && hasCalendarScope(req.user.id), redirect: cfg().redirect });
 });
 
 driveRouter.post('/connect', requireAuth, (req, res) => {
   if (!driveConfigured()) return res.status(400).json({ error: 'GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET non configurés sur le serveur' });
   const state = crypto.randomBytes(16).toString('base64url');
   states.set(state, { userId: req.user.id, exp: Date.now() + 10 * 60 * 1000 });
-  const q = new URLSearchParams({ client_id: cfg().id, redirect_uri: cfg().redirect, response_type: 'code', access_type: 'offline', prompt: 'consent', scope: SCOPES.join(' '), state });
+  const q = new URLSearchParams({ client_id: cfg().id, redirect_uri: cfg().redirect, response_type: 'code', access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', scope: SCOPES.join(' '), state });
   res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${q}` });
 });
 
@@ -113,7 +118,7 @@ driveCallback.get('/callback', async (req, res) => {
   if (!r.ok || !j.refresh_token) return res.status(400).send(`Google : ${j.error_description || 'aucun refresh_token reçu'}`);
   let email = null;
   try { email = JSON.parse(Buffer.from(j.id_token.split('.')[1], 'base64url').toString()).email; } catch {}
-  db.prepare('INSERT INTO drive_tokens(user_id,refresh_token,email) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET refresh_token=excluded.refresh_token,email=excluded.email')
-    .run(st.userId, enc(j.refresh_token), email);
+  db.prepare('INSERT INTO drive_tokens(user_id,refresh_token,email,scope) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET refresh_token=excluded.refresh_token,email=excluded.email,scope=excluded.scope')
+    .run(st.userId, enc(j.refresh_token), email, String(j.scope || ''));
   res.redirect('/#/settings');
 });

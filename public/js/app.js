@@ -1117,10 +1117,10 @@ async function tabAppearance(p) {
 
 async function tabDrive(p) {
   const st = await api.get('/api/drive/status'), admin = S.me.role === 'admin';
-  p.append(h('p', { class: 'muted' }, 'Reliez votre compte Google pour insérer des fichiers Drive dans vos pages (commande /drive) et, côté administrateur, envoyer les sauvegardes vers votre Drive.'));
+  p.append(h('p', { class: 'muted' }, 'Reliez votre compte Google pour insérer des fichiers Drive dans vos pages (commande /drive), envoyer les éléments datés d’une base vers Google Agenda (Réglages de la base) et, côté administrateur, envoyer les sauvegardes vers votre Drive.'));
   if (!st.configured) {
     p.append(h('div', { class: 'banner' }, h('b', {}, 'Non configuré sur le serveur.'), h('ol', {},
-      h('li', {}, 'Console Google Cloud → API et services → activer « Google Drive API ».'),
+      h('li', {}, 'Console Google Cloud → API et services → activer « Google Drive API » et « Google Calendar API ».'),
       h('li', {}, 'Identifiants → créer un « ID client OAuth » (application Web).'),
       h('li', {}, `URI de redirection autorisé : ${st.redirect}`),
       h('li', {}, 'Définir GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET et PUBLIC_URL dans l’environnement du serveur, puis redémarrer.'))));
@@ -1128,9 +1128,9 @@ async function tabDrive(p) {
     return;
   }
   if (st.connected) {
-    p.append(h('p', {}, '✅ Connecté', st.email ? ` : ${st.email}` : ''), h('button', { class: 'btn danger', onclick: async () => { await api.post('/api/drive/disconnect'); showSettings('drive'); } }, 'Déconnecter'));
+    p.append(h('p', {}, '✅ Connecté', st.email ? ` : ${st.email}` : ''), st.calendar ? h('p', {}, '✅ Google Agenda autorisé') : h('div', { class: 'banner' }, h('p', {}, 'Google Agenda n’est pas encore autorisé pour ce compte (connexion faite avant son ajout).'), h('button', { class: 'btn primary', onclick: async () => { const r = await api.post('/api/drive/connect'); location.href = r.url; } }, 'Autoriser Google Agenda')), h('button', { class: 'btn danger', onclick: async () => { await api.post('/api/drive/disconnect'); showSettings('drive'); } }, 'Déconnecter'));
     if (admin) { const s = await api.get('/api/admin/settings'); p.append(h('hr'), h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.backup_to_drive === '1', onchange: async (e) => { await api.put('/api/settings', { backup_to_drive: e.target.checked ? '1' : '0' }); } }), 'Envoyer automatiquement chaque sauvegarde vers Google Drive (dossier « Deepwell Backups »)')); }
-  } else p.append(h('button', { class: 'btn primary', onclick: async () => { const r = await api.post('/api/drive/connect'); location.href = r.url; } }, 'Connecter Google Drive'));
+  } else p.append(h('button', { class: 'btn primary', onclick: async () => { const r = await api.post('/api/drive/connect'); location.href = r.url; } }, 'Connecter Google (Drive et Agenda)'));
   if (admin) await pdmSection(p);
 }
 

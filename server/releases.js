@@ -8,6 +8,7 @@ export const RELEASES = [
   {
     version: '3.4.11', date: '2026-11-22',
     nouveautes: [
+      'Google Agenda : dans « Réglages de la base », la case « Google Agenda » envoie chaque ligne datée de la base vers Google Agenda (journée entière sans heure, à l’heure sinon ; 1 h par défaut). Pour demander à Google Home « quels sont mes devoirs pour mardi ? ». Sens unique DeepWell → Google : créer, déplacer, renommer, supprimer ou verrouiller une ligne met l’événement à jour ; désactiver retire les événements créés par DeepWell. Agenda « DeepWell » à part ou agenda principal au choix. Nécessite d’autoriser Google Agenda une fois (Réglages → Google Drive).',
       'Rester connecté : case « Rester connecté 90 jours sur cet appareil » à la connexion (cochée par défaut ; sinon 30 jours). La durée se renouvelle à chaque visite.',
       'Réglages → Connexions (administrateur) : appareils connectés (avec bouton « Déconnecter »), consultations de pages avec le temps passé — comptes ET liens publics sans compte — et journal des connexions (réussies, échecs de mot de passe, déconnexions). Conservé 1 an.',
       'Pages verrouillées dans une base : tant que le code n’est pas saisi, la ligne apparaît « expurgée » (barres noires + mention EXPURGÉ) dans toutes les vues : ni titre, ni icône, ni propriétés, ni contenu ; elle n’apparaît pas non plus dans la recherche ni dans l’arborescence. Une ligne masquée ne peut plus être déplacée ni modifiée à l’aveugle.',

@@ -12,6 +12,7 @@ import express from 'express';
 import { db, now } from './db.js';
 import { hashPassword, verifyPassword, requireAuth } from './auth.js';
 import { accessFor, can } from './access.js';
+import { gcalTouch } from './gcal.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS page_locks(
   page_id TEXT PRIMARY KEY REFERENCES pages(id) ON DELETE CASCADE, hash TEXT NOT NULL, idle_min INTEGER NOT NULL DEFAULT 1440, created_at INTEGER NOT NULL)`);
@@ -114,6 +115,7 @@ lockRouter.put('/:id/lock', requireAuth, (req, res) => {
   if (!pinOk(pin)) return res.status(400).json({ error: 'Le code doit faire de 4 à 64 caractères' });
   db.prepare('INSERT INTO page_locks(page_id,hash,idle_min,created_at) VALUES(?,?,?,?) ON CONFLICT(page_id) DO UPDATE SET hash=excluded.hash, idle_min=excluded.idle_min')
     .run(id, hashPassword(pin), idle, now());
+  gcalTouch(id); // une ligne verrouillée n'apparaît jamais dans Google Agenda
   unlocked.set(`${sessKey(req)}|${id}`, now()); rememberCode(sessKey(req), String(pin)); // celui qui vient de définir le code reste connecté
   res.json({ ok: true });
 });
@@ -123,5 +125,5 @@ lockRouter.post('/:id/lock/remove', requireAuth, (req, res) => {
   const own = db.prepare('SELECT hash FROM page_locks WHERE page_id=?').get(id);
   if (!own) return res.json({ ok: true });
   if (!verifyPassword(String(req.body?.pin ?? ''), own.hash)) return res.status(403).json({ error: 'Code incorrect' });
-  db.prepare('DELETE FROM page_locks WHERE page_id=?').run(id); res.json({ ok: true });
+  db.prepare('DELETE FROM page_locks WHERE page_id=?').run(id); gcalTouch(id); res.json({ ok: true });
 });
