@@ -189,9 +189,14 @@ export function templatesRoutes(router, { autoProps, defaultProps, schoolPageCha
       const max = db.prepare('SELECT COALESCE(MAX(position),0) m FROM pages WHERE parent_id=?').get(d.id).m;
       const tprops = parse(tpl.props, {}) || {}, props = { ...defaultProps(d.id) }; // valeurs par défaut de la base, que le modèle peut remplacer
       for (const [k, v] of Object.entries(tprops)) if (!TIME_PROPS.has(v?.type) && !k.startsWith('dw_')) props[k] = v;
+      const sch = parse(d.schema, {}) || {};
+      for (const [k, v] of Object.entries(req.body?.props || {})) if (sch[k] && !k.startsWith('dw_') && (v === null || typeof v === 'object')) props[k] = v; // ex. la colonne Kanban où l'on crée la carte
       Object.assign(props, autoProps(d.id));
+      const given = typeof req.body?.title === 'string' ? req.body.title.trim().slice(0, 300) : '', title = given || tpl.title;
+      const tk = Object.keys(sch).find((k) => sch[k].type === 'title');
+      if (given && tk) props[tk] = { type: 'title', title: [{ type: 'text', text: { content: given, link: null }, plain_text: given, annotations: {}, href: null }] };
       db.prepare(`INSERT INTO pages(id,parent_id,owner_id,kind,title,icon,cover,props,position,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(id, d.id, d.owner_id, 'page', tpl.title, tpl.icon, tpl.cover, JSON.stringify(props), max + 1, t, t);
+        .run(id, d.id, d.owner_id, 'page', title, tpl.icon, tpl.cover, JSON.stringify(props), max + 1, t, t);
       const rows = db.prepare('SELECT * FROM blocks WHERE page_id=? ORDER BY position').all(tpl.id), map = new Map(rows.map((b) => [b.id, uid()]));
       insertBlocks(id, rows.map((b) => {
         const content = resolveMentions(parse(b.content, {}), today);
@@ -199,7 +204,7 @@ export function templatesRoutes(router, { autoProps, defaultProps, schoolPageCha
       }), t);
     });
     schoolPageChanged(id);
-    res.json({ id, title: tpl.title, icon: tpl.icon, props: parse(db.prepare('SELECT props FROM pages WHERE id=?').get(id).props, {}) });
+    res.json({ id, title: db.prepare('SELECT title FROM pages WHERE id=?').get(id).title, icon: tpl.icon, props: parse(db.prepare('SELECT props FROM pages WHERE id=?').get(id).props, {}) });
   });
 
   /** Duplique un modèle (« Copie de … »). */

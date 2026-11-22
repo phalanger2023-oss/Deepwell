@@ -121,14 +121,15 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     } catch (e) { toast(e.message, 'error'); }
   };
   // Nouvelle ligne depuis un modèle (propriétés + contenu copiés, mentions « @Today » remplacées par la date du jour)
-  async function createFromTemplate(t) {
-    const created = await api.post(`/api/pages/${page.id}/from-template/${t.id}`, { today: todayIso() });
+  async function createFromTemplate(t, { title, props: forced, stay } = {}) {
+    const created = await api.post(`/api/pages/${page.id}/from-template/${t.id}`, { today: todayIso(), ...(title ? { title } : {}), ...(forced ? { props: forced } : {}) });
     const row = { id: created.id, title: created.title || '', icon: created.icon, cover: null, props: created.props || {} };
     rows.push(row); onChange?.();
     if (schoolDrive()) {
       try { const f = await api.post(`/api/school/pages/${row.id}/folder`); if (f?.pending) toast('Chapitre créé. Google ne répond pas : le dossier Drive sera créé automatiquement dès que possible.'); }
       catch (e) { toast(e.message, 'error'); }
     }
+    if (stay) return row;
     draw(); open(row);
   }
   const openTemplates = async (anchor) => { try { (await import('./templates.js')).openTemplateMenu(anchor, { page, onPick: (t) => createFromTemplate(t).catch((e) => toast(e.message, 'error')) }); } catch (e) { toast(e.message, 'error'); } };
@@ -172,7 +173,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
   const sorted = (list, v) => (v.sort?.prop && schema[v.sort.prop] ? [...list].sort((a, b) => compareProps(a.props?.[v.sort.prop], b.props?.[v.sort.prop], v.sort.dir)) : list);
   let exProm = null; const excerpts = () => (exProm ||= api.get(`/api/pages/${page.id}/excerpts`).catch(() => ({})));
   const cal = {}; // état de navigation du calendrier (non enregistré)
-  const ctx = { schema, tk, allProps, editable, rows, commitRow, createRow, open, saveSchema, saveViews, cal, redraw: () => draw(), matches, sorted, cardProps, visibleProps, excerpts };
+  const ctx = { page, schema, tk, allProps, editable, rows, commitRow, createRow, createFromTemplate, schoolDrive, open, saveSchema, saveViews, cal, redraw: () => draw(), matches, sorted, cardProps, visibleProps, excerpts };
 
   // ---------- onglets de vues + barre d'outils ----------
   const body = h('div', { class: 'dbv-body' });
@@ -316,6 +317,48 @@ function drawBoard(root, v, c) {
     const opt = options.find((o) => o.name === key);
     await c.commitRow(r, gp, { type, [type]: key == null ? null : opt || { name: key, color: 'default' } }); c.redraw();
   };
+  // Nouvelle carte : titre + modèle (celui par défaut de la base est présélectionné). La colonne où l'on crée la carte l'emporte sur le modèle.
+  async function newCardDialog(key, forced) {
+    let tpls = [];
+    try { tpls = await api.get(`/api/pages/${c.page.id}/templates`); } catch { /* sans modèle : création simple */ }
+    const defId = c.page.props?.dw_default_template, input = h('input', { class: 'input', placeholder: 'Titre (facultatif avec un modèle)', autofocus: true });
+    const sel = h('select', { class: 'input' }, h('option', { value: '' }, 'Aucun modèle (carte vide)'), tpls.map((t) => h('option', { value: t.id, selected: t.id === defId ? true : null }, t.title || 'Sans titre')));
+    if (defId && tpls.some((t) => t.id === defId)) sel.value = defId;
+    const go = async (btn) => {
+      btn.disabled = true;
+      try {
+        const t = tpls.find((x) => x.id === sel.value), title = input.value.trim();
+        if (t) await c.createFromTemplate(t, { title, props: forced, stay: true });
+        else { const r = await c.createRow(title, forced); if (c.schoolDrive()) api.post(`/api/school/pages/${r.id}/folder`).catch(() => {}); }
+        m.close(); c.redraw();
+      } catch (e) { toast(e.message, 'error'); btn.disabled = false; }
+    };
+    const ok = h('button', { class: 'btn primary', onclick: (e) => go(e.currentTarget) }, 'Créer');
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ok.click(); } });
+    const m = modal(`Nouvelle carte${key ? ` — ${key}` : ''}`, h('div', {}, h('label', { class: 'btn-field' }, h('span', { class: 'btn-fl' }, 'Titre'), input),
+      tpls.length ? h('label', { class: 'btn-field' }, h('span', { class: 'btn-fl' }, 'Modèle'), sel) : h('p', { class: 'muted small' }, 'Aucun modèle dans cette base pour l’instant.'),
+      h('div', { class: 'row-end' }, ok)));
+    setTimeout(() => input.focus(), 30);
+  }
+  // Clic droit (ou appui long) sur une carte : ouvrir, renommer, déplacer vers une colonne, supprimer.
+  async function cardMenu(e, r) {
+    e.preventDefault();
+    const [{ popMenu }] = [await import('./menus.js')];
+    popMenu(e.clientX, e.clientY, [
+      { label: 'Ouvrir', icon: 'file-text', fn: () => c.open(r) },
+      editable ? { label: 'Renommer…', icon: 'pencil', fn: async () => {
+        const n = await ask('Renommer', 'Titre', r.title || ''); if (n === null || !n.trim() || n.trim() === r.title) return;
+        await c.commitRow(r, tk, { type: 'title', title: plainRt(n.trim()) }); c.redraw();
+      } } : null,
+      editable ? { header: 'Déplacer vers' } : null,
+      ...(editable ? groups.filter((g) => g.key !== valueOf(r) && !(g.key == null && !options.length)).map((g) => ({ label: g.key ?? 'Sans valeur', icon: 'arrow-right', fn: () => moveTo(r.id, g.key).then(() => c.redraw()) })) : []),
+      editable ? 'sep' : null,
+      editable ? { label: 'Supprimer', icon: 'trash-2', danger: true, fn: async () => {
+        if (!await confirmBox(`Supprimer « ${r.title || 'Sans titre'} » ? La page part à la corbeille.`)) return;
+        await api.del(`/api/pages/${r.id}`); c.rows.splice(c.rows.indexOf(r), 1); c.redraw();
+      } } : null,
+    ]);
+  }
   const cols = groups.map(({ key, opt }) => {
     const cards = list.filter((r) => valueOf(r) === key);
     if (key == null && !cards.length && options.length) return null; // « Sans valeur » masquée quand elle est vide
@@ -323,10 +366,7 @@ function drawBoard(root, v, c) {
     col.addEventListener('dragover', (e) => { if (editable && e.dataTransfer.types.includes('text/dw-row')) { e.preventDefault(); col.classList.add('over'); } });
     col.addEventListener('dragleave', (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove('over'); });
     col.addEventListener('drop', (e) => { col.classList.remove('over'); const id = e.dataTransfer.getData('text/dw-row'); if (id) { e.preventDefault(); moveTo(id, key); } });
-    const addBtn = editable ? h('button', { class: 'kb-add', onclick: async () => {
-      const t = await ask(`Nouvelle carte${key ? ` — ${key}` : ''}`, 'Titre');
-      if (t === null) return; const r = await c.createRow(t.trim(), { [gp]: { type, [type]: key == null ? null : opt } }); c.redraw();
-    } }, vi('plus', 14), 'Nouvelle carte') : null;
+    const addBtn = editable ? h('button', { class: 'kb-add', onclick: () => newCardDialog(key, { [gp]: { type, [type]: key == null ? null : opt } }) }, vi('plus', 14), 'Nouvelle carte') : null;
     col.append(h('div', { class: 'kb-head' }, opt ? chip(opt) : h('span', { class: 'chip' }, 'Sans valeur'), h('span', { class: 'muted small' }, cards.length)),
       h('div', { class: 'kb-cards' }, c.sorted(cards, v).map((r) => card(r))), addBtn);
     return col;
@@ -379,6 +419,7 @@ function drawBoard(root, v, c) {
       h('div', { class: 'kb-title' }, iconNode(r.icon, 16, 'file-text'), r.title || 'Sans titre'), props.length ? h('div', { class: 'kb-props' }, props) : null);
     el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/dw-row', r.id); e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); });
     el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    el.addEventListener('contextmenu', (e) => { if (!e.sourceCapabilities?.firesTouchEvents && !el.classList.contains('dragging')) cardMenu(e, r); });
     if (editable) touchDrag(el, r);
     return el;
   }

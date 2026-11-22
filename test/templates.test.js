@@ -111,3 +111,17 @@ test('boutons « Nouvel addendum » : aperçu, ajout dans les blocs déroulants,
   assert.equal((await api('GET', `/api/pages/${none.id}`)).body.blocks.length, 1);
   const again = (await api('POST', `/api/pages/${db.id}/architecture`, { dry: true })).body; assert.equal(again.updated.length, 0); // idempotent
 });
+
+test('création depuis un modèle : titre et valeurs imposées (colonne du Kanban) l’emportent sur le modèle', async () => {
+  const d = (await api('POST', '/api/pages', { title: 'Base cartes', kind: 'database' })).body;
+  const schema = { Name: { id: 'title', name: 'Name', type: 'title', title: {} }, Statut: { id: 's', name: 'Statut', type: 'select', select: { options: [{ name: 'A', color: 'gray' }, { name: 'B', color: 'blue' }] } } };
+  await api('PATCH', `/api/pages/${d.id}`, { schema });
+  const t = (await api('POST', `/api/pages/${d.id}/templates`, { title: 'Mon modèle' })).body;
+  const r1 = (await api('POST', `/api/pages/${d.id}/from-template/${t.id}`, { title: 'Ma carte', props: { Statut: { type: 'select', select: { name: 'B', color: 'blue' } }, dw_school: { x: 1 }, Inconnue: { type: 'select', select: null } } })).body;
+  assert.equal(r1.title, 'Ma carte');
+  assert.equal(r1.props.Statut.select.name, 'B');
+  assert.equal(r1.props.Name.title[0].plain_text, 'Ma carte');
+  assert.ok(!('dw_school' in r1.props) && !('Inconnue' in r1.props), 'clés internes ou inconnues ignorées');
+  const r2 = (await api('POST', `/api/pages/${d.id}/from-template/${t.id}`, {})).body;
+  assert.equal(r2.title, 'Mon modèle', 'sans titre donné : titre du modèle');
+});

@@ -6,6 +6,17 @@
  */
 export const RELEASES = [
   {
+    version: '3.4.9', date: '2026-11-22',
+    nouveautes: [
+      'Kanban : clic droit (ou appui long au doigt) sur une carte → Ouvrir, Renommer, Déplacer vers une colonne, Supprimer.',
+      'Kanban : « Nouvelle carte » propose maintenant de choisir un modèle. Dans « Gérer les modèles », le bouton « Par défaut » présélectionne un modèle pour toute la base. La colonne où l’on crée la carte garde sa valeur (ex. la matière).',
+    ],
+    ameliorations: [],
+    corrections: [
+      'Chapitres : le cadre « Fichiers du chapitre » (Ajouter un fichier, PDM…) s’affiche désormais dès la première ouverture de la page, sans devoir créer un addendum puis revenir.',
+    ],
+  },
+  {
     version: '3.4.8', date: '2026-11-22',
     nouveautes: [
       'Liaison avec PDM (éditeur de PDF) : quand le PDF de référence d’un chapitre est ajouté, il est déposé automatiquement dans PDM, dans un vrai dossier année / matière / chapitre. La page du chapitre affiche alors « Éditer dans PDM » (version annotée) et « Original vierge » (PDF d’origine jamais modifié). Les addenda ne sont pas envoyés.',

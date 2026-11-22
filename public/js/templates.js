@@ -25,7 +25,12 @@ async function manage(page) {
     let tpls; try { tpls = await list(page.id); } catch (e) { toast(e.message, 'error'); return; }
     body.replaceChildren(
       tpls.length ? h('div', { class: 'tpl-list' }, tpls.map((t) => h('div', { class: 'tpl-row' },
-        h('span', { class: 'tpl-name' }, vi('file-text', 15), t.title || 'Sans titre'),
+        h('span', { class: 'tpl-name' }, vi('file-text', 15), t.title || 'Sans titre', page.props?.dw_default_template === t.id ? h('span', { class: 'muted small' }, ' · par défaut') : null),
+        h('button', { class: 'btn small', title: 'Modèle présélectionné quand on crée une carte dans le Kanban', onclick: async () => {
+          const on = page.props?.dw_default_template === t.id, props = { ...(page.props || {}) };
+          if (on) delete props.dw_default_template; else props.dw_default_template = t.id;
+          try { await api.patch(`/api/pages/${page.id}`, { props }); page.props = props; draw(); } catch (e) { toast(e.message, 'error'); }
+        } }, vi('star', 13), page.props?.dw_default_template === t.id ? 'Retirer par défaut' : 'Par défaut'),
         h('button', { class: 'btn small', onclick: () => { m.close(); location.hash = `#/page/${t.id}`; } }, vi('pencil', 13), 'Modifier'),
         h('button', { class: 'btn small', onclick: async () => { try { await api.post(`/api/pages/${page.id}/templates/${t.id}/duplicate`); draw(); } catch (e) { toast(e.message, 'error'); } } }, vi('copy', 13), 'Dupliquer'),
         h('button', { class: 'btn small danger', onclick: async () => {
