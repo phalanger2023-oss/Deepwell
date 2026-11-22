@@ -810,8 +810,16 @@ async function armIdleLock(pageId) {
 }
 for (const ev of ['keydown', 'pointerdown', 'wheel', 'touchstart']) document.addEventListener(ev, () => { S.lastAct = Date.now(); }, { passive: true, capture: true });
 
+// Clic droit sur une ligne de base de données : verrouiller / modifier / retirer le code sans quitter la base
+window.addEventListener('dw-row-lock', async (e) => {
+  const { id, mode, done } = e.detail || {};
+  try {
+    const own = (await api.get(`/api/pages/${id}/lock`)).own, page = { id };
+    if (mode === 'remove') unlockRemove(page, done); else lockDialog(page, mode === 'edit' || (mode === 'auto' && own), done);
+  } catch (x) { toast(x.message, 'error'); }
+});
 function pinField(label) { return h('input', { class: 'input', type: 'password', placeholder: label, autocomplete: 'new-password' }); }
-function lockDialog(page, editing) {
+function lockDialog(page, editing, after) {
   const cur = pinField('Code actuel'), p1 = pinField(editing ? 'Nouveau code (vide = inchangé)' : 'Code (4 caractères minimum)'), p2 = pinField('Confirmer le code');
   const idle = h('select', { class: 'input' }, [[5, '5 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 heure'], [1440, '24 heures (par défaut)'], [0, 'Jamais (jusqu’à la déconnexion)']].map(([v, l]) => h('option', { value: v, selected: v === (S.lockInfo?.idle ?? 1440) }, l)));
   const err = h('div', { class: 'lock-err' });
@@ -823,16 +831,16 @@ function lockDialog(page, editing) {
       h('button', { class: 'btn primary', onclick: async () => {
         err.textContent = '';
         if (p1.value !== p2.value && (p1.value || !editing)) { err.textContent = 'Les deux codes ne correspondent pas'; return; }
-        try { await api.put(`/api/pages/${page.id}/lock`, { pin: p1.value, current_pin: cur.value, idle_min: Number(idle.value) }); m.close(); toast(editing ? 'Verrou modifié' : 'Page verrouillée'); await refreshTree(); showPage(page.id); }
+        try { await api.put(`/api/pages/${page.id}/lock`, { pin: p1.value, current_pin: cur.value, idle_min: Number(idle.value) }); m.close(); toast(editing ? 'Verrou modifié' : 'Page verrouillée'); await refreshTree(); after ? after() : showPage(page.id); }
         catch (x) { err.textContent = x.message; }
       } }, 'Enregistrer'))));
   setTimeout(() => (editing ? cur : p1).focus(), 50);
 }
-async function unlockRemove(page) {
+async function unlockRemove(page, after) {
   const pin = pinField('Code actuel'), err = h('div', { class: 'lock-err' });
   const m = modal('Retirer le verrou', h('div', { class: 'btn-dlg' }, h('p', { class: 'muted small' }, 'Saisissez le code actuel pour retirer la protection.'), pin, err,
     h('div', { class: 'row-end' }, h('button', { class: 'btn', onclick: () => m.close() }, 'Annuler'),
-      h('button', { class: 'btn danger', onclick: async () => { try { await api.post(`/api/pages/${page.id}/lock/remove`, { pin: pin.value }); m.close(); toast('Verrou retiré'); await refreshTree(); showPage(page.id); } catch (x) { err.textContent = x.message; } } }, 'Retirer le verrou'))));
+      h('button', { class: 'btn danger', onclick: async () => { try { await api.post(`/api/pages/${page.id}/lock/remove`, { pin: pin.value }); m.close(); toast('Verrou retiré'); await refreshTree(); after ? after() : showPage(page.id); } catch (x) { err.textContent = x.message; } } }, 'Retirer le verrou'))));
   setTimeout(() => pin.focus(), 50);
 }
 

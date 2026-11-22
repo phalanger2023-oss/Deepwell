@@ -198,7 +198,32 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
   const sorted = (list, v) => (v.sort?.prop && schema[v.sort.prop] ? [...list].sort((a, b) => compareProps(a.props?.[v.sort.prop], b.props?.[v.sort.prop], v.sort.dir)) : list);
   let exProm = null; const excerpts = () => (exProm ||= api.get(`/api/pages/${page.id}/excerpts`).catch(() => ({})));
   const cal = {}; // état de navigation du calendrier (non enregistré)
-  const ctx = { page, schema, tk, allProps, editable, rows, commitRow, createRow, createFromTemplate, schoolDrive, open, saveSchema, saveViews, cal, redraw: () => draw(), matches, sorted, cardProps, visibleProps, excerpts };
+  /** Menu clic droit d'une ligne (liste, galerie, tableau) : ouvrir, renommer, verrouiller avec un code, supprimer. */
+  async function rowMenu(e, r) {
+    e.preventDefault(); e.stopPropagation();
+    const x = e.clientX, y = e.clientY;
+    const { popMenu } = await import('./menus.js');
+    let own = false;
+    if (!r.locked) { try { own = !!(await api.get(`/api/pages/${r.id}/lock`)).own; } catch { /* pas propriétaire : pas d'entrée de verrou */ } }
+    const lock = (mode) => window.dispatchEvent(new CustomEvent('dw-row-lock', { detail: { id: r.id, mode, done: () => window.dispatchEvent(new Event('dw-refresh-page')) } }));
+    popMenu(x, y, [
+      { label: 'Ouvrir', icon: 'file-text', fn: () => open(r) },
+      { label: 'Ouvrir en plein écran', icon: 'maximize-2', fn: () => { location.hash = `#/page/${r.id}`; } },
+      editable && !r.locked ? { label: 'Renommer…', icon: 'pencil', fn: async () => {
+        const n = await ask('Renommer', 'Titre', r.title || ''); if (n === null || !n.trim() || n.trim() === r.title) return;
+        await commitRow(r, tk, { type: 'title', title: plainRt(n.trim()) }); draw();
+      } } : null,
+      editable ? 'sep' : null,
+      editable && !r.locked ? (own ? { label: 'Modifier le code ou la durée…', icon: 'lock', fn: () => lock('edit') } : { label: 'Rendre privée (verrouiller avec un code)…', icon: 'lock', fn: () => lock('set') }) : null,
+      editable && !r.locked && own ? { label: 'Retirer le verrou…', icon: 'lock-open', fn: () => lock('remove') } : null,
+      editable ? 'sep' : null,
+      editable ? { label: 'Supprimer', icon: 'trash-2', danger: true, fn: async () => {
+        if (!await confirmBox(`Supprimer « ${r.title || 'Sans titre'} » ? La page part à la corbeille.`)) return;
+        await api.del(`/api/pages/${r.id}`); rows.splice(rows.indexOf(r), 1); draw();
+      } } : null,
+    ]);
+  }
+  const ctx = { page, schema, tk, allProps, editable, rows, rowMenu, commitRow, createRow, createFromTemplate, schoolDrive, open, saveSchema, saveViews, cal, redraw: () => draw(), matches, sorted, cardProps, visibleProps, excerpts };
 
   // ---------- onglets de vues + barre d'outils ----------
   const body = h('div', { class: 'dbv-body' });
@@ -329,7 +354,7 @@ function drawTable(root, v, c) {
   const body = list.map((r) => r.locked ? h('tr', { class: 'row-locked' }, cols.map((col, i) => h('td', { class: col === tk ? 'title-cell' : '' },
       col === tk ? h('div', { class: 'title-wrap' }, h('a', { href: `/#/page/${r.id}`, class: 'open-row', title: 'Page verrouillée : ouvrir pour saisir le code' }, vi('lock', 15)), ttl(r)) : redBar(r.id, i + 1))),
     editable ? h('td', { class: 'row-x' }) : null)
-    : h('tr', {}, cols.map((col) => h('td', { class: col === tk ? 'title-cell' : '' },
+    : h('tr', { oncontextmenu: (e) => { if (!e.target.closest('input, textarea, select, [contenteditable="true"]')) c.rowMenu(e, r); } }, cols.map((col) => h('td', { class: col === tk ? 'title-cell' : '' },
     col === tk ? h('div', { class: 'title-wrap' }, h('a', { href: `/#/page/${r.id}`, class: 'open-row', title: 'Ouvrir' }, iconNode(r.icon, 16, 'file-text')), legacyDot(r),
       propEditor(schema[col], r.props?.[col] || { type: 'title', title: plainRt(r.title) }, editable, (np) => c.commitRow(r, col, np), c.saveSchema))
       : propEditor(schema[col], r.props?.[col], editable, (np) => c.commitRow(r, col, np), c.saveSchema))),
@@ -393,6 +418,8 @@ function drawBoard(root, v, c) {
       } } : null,
       editable && !r.locked ? { header: 'Déplacer vers' } : null,
       ...(editable && !r.locked ? groups.filter((g) => g.key !== valueOf(r) && !(g.key == null && !options.length)).map((g) => ({ label: g.key ?? 'Sans valeur', icon: 'arrow-right', fn: () => moveTo(r.id, g.key).then(() => c.redraw()) })) : []),
+      editable && !r.locked ? 'sep' : null,
+      editable && !r.locked ? { label: 'Rendre privée (code)…', icon: 'lock', fn: () => window.dispatchEvent(new CustomEvent('dw-row-lock', { detail: { id: r.id, mode: 'auto', done: () => window.dispatchEvent(new Event('dw-refresh-page')) } })) } : null,
       editable ? 'sep' : null,
       editable ? { label: 'Supprimer', icon: 'trash-2', danger: true, fn: async () => {
         if (!await confirmBox(`Supprimer « ${r.title || 'Sans titre'} » ? La page part à la corbeille.`)) return;
@@ -572,7 +599,7 @@ function drawGallery(root, v, c) {
   root.replaceChildren(h('div', { class: 'gal-grid' }, list.map((r) => {
     const props = c.cardProps(v).map((p) => propBadge(schema[p], r.props?.[p])).filter(Boolean);
     const cover = r.cover && safeUrl(r.cover);
-    return h('a', { class: 'gal-card', href: `/#/page/${r.id}` },
+    return h('a', { class: 'gal-card', href: `/#/page/${r.id}`, oncontextmenu: (e) => c.rowMenu(e, r) },
       h('div', { class: 'gal-cover', style: cover ? `background-image:url("${cover.replace(/["\\]/g, '')}")` : '' }, cover ? null : iconNode(r.icon, 32, 'file-text')),
       h('div', { class: 'gal-info' }, h('div', { class: 'kb-title' }, iconNode(r.icon, 16, 'file-text'), ttl(r), legacyDot(r)), props.length ? h('div', { class: 'kb-props' }, props) : null));
   }), list.length ? null : h('div', { class: 'muted pad' }, 'Aucune ligne')));
@@ -583,6 +610,6 @@ function drawList(root, v, c) {
   const { schema } = c, list = c.sorted(c.rows.filter(c.matches), v);
   root.replaceChildren(h('div', { class: 'lst' }, list.map((r) => {
     const props = c.cardProps(v).map((p) => propBadge(schema[p], r.props?.[p])).filter(Boolean);
-    return h('a', { class: 'lst-row', href: `/#/page/${r.id}` }, iconNode(r.icon, 18, 'file-text'), h('span', { class: 'lst-title' }, ttl(r), legacyDot(r)), props.length ? h('span', { class: 'lst-props' }, props) : null);
+    return h('a', { class: 'lst-row', href: `/#/page/${r.id}`, oncontextmenu: (e) => c.rowMenu(e, r) }, iconNode(r.icon, 18, 'file-text'), h('span', { class: 'lst-title' }, ttl(r), legacyDot(r)), props.length ? h('span', { class: 'lst-props' }, props) : null);
   }), list.length ? null : h('div', { class: 'muted pad' }, 'Aucune ligne')));
 }

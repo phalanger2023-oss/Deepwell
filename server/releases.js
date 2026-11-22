@@ -8,6 +8,7 @@ export const RELEASES = [
   {
     version: '3.4.11', date: '2026-11-22',
     nouveautes: [
+      'Bases de données : clic droit sur une ligne (liste, galerie, tableau, et Kanban) pour ouvrir, renommer, supprimer ou la rendre privée avec un code (modifier / retirer le code aussi), sans quitter la base.',
       'Google Agenda : dans « Réglages de la base », la case « Google Agenda » envoie chaque ligne datée de la base vers Google Agenda (journée entière sans heure, à l’heure sinon ; 1 h par défaut). Pour demander à Google Home « quels sont mes devoirs pour mardi ? ». Sens unique DeepWell → Google : créer, déplacer, renommer, supprimer ou verrouiller une ligne met l’événement à jour ; désactiver retire les événements créés par DeepWell. Agenda « DeepWell » à part ou agenda principal au choix. Nécessite d’autoriser Google Agenda une fois (Réglages → Google Drive).',
       'Rester connecté : case « Rester connecté 90 jours sur cet appareil » à la connexion (cochée par défaut ; sinon 30 jours). La durée se renouvelle à chaque visite.',
       'Réglages → Connexions (administrateur) : appareils connectés (avec bouton « Déconnecter »), consultations de pages avec le temps passé — comptes ET liens publics sans compte — et journal des connexions (réussies, échecs de mot de passe, déconnexions). Conservé 1 an.',
