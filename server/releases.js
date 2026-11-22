@@ -25,6 +25,7 @@ export const RELEASES = [
       'Icône de l’onglet du navigateur : celle de la page affichée ; sans icône de page, l’icône du site choisie dans Réglages → Apparence ; sinon l’icône par défaut.',
     ],
     ameliorations: [
+      'Titres (et titres dépliants) : plus d’espace au-dessus, pour mieux séparer les sections.',
       'Performances : arbre des pages et grandes bases ~5 à 6 fois plus rapides (droits d’accès préparés une fois, vérification des verrous évitée quand il n’y en a pas), index SQLite supplémentaires, réglages SQLite (cache, écriture WAL), fichiers du site compressés une seule fois et gardés en mémoire.',],
     corrections: [
       'Retour arrière dans un bloc de texte vide : le bloc est supprimé, y compris juste après un séparateur ou un bloc non textuel.',
