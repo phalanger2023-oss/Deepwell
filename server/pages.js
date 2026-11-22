@@ -8,7 +8,7 @@ import { saveFile } from './files.js';
 import { importNotionIcon } from './icons-local.js';
 import { requireAuth } from './auth.js';
 import { accessFor, can, isDescendant } from './access.js';
-import { lockRouter, lockGuard, lockedIds, lockFor } from './locks.js';
+import { lockRouter, lockGuard, lockedIds, closedIds, lockFor } from './locks.js';
 import { cleanProps } from './school.js';
 import { isLegacyRow } from './templates.js';
 import { schoolPageChanged, schoolPagesDeleting, schoolPdmBackfill, schoolAddendumChanged, schoolAddendaBackfill } from './school-drive.js';
@@ -60,7 +60,9 @@ pagesRouter.get('/tree', requireAuth, (req, res) => {
       SELECT page_id FROM shares WHERE user_id=?1
       UNION SELECT p.id FROM pages p JOIN d ON p.parent_id=d.id)
     SELECT ${cols} FROM pages WHERE id IN (SELECT id FROM d) AND owner_id != ?1 AND kind != 'template' ORDER BY position`).all(req.user.id);
-  res.json({ pages: mine, shared, sharedRoots: roots });
+  const kind = new Map([...mine, ...shared].map((p) => [p.id, p.kind]));
+  const redact = (list) => { const c = closedIds(req, list.filter((p) => kind.get(p.parent_id) === 'database').map((p) => p.id)); return list.map((p) => (c.has(p.id) ? { ...p, title: '', icon: null } : p)); };
+  res.json({ pages: redact(mine), shared: redact(shared), sharedRoots: roots });
 });
 
 pagesRouter.get('/search', requireAuth, (req, res) => {
@@ -82,6 +84,9 @@ pagesRouter.get('/search', requireAuth, (req, res) => {
     FROM blocks b JOIN pages p ON p.id=b.page_id LEFT JOIN pages par ON par.id=p.parent_id
     WHERE p.id IN (SELECT id FROM acc) AND p.archived=0 AND p.kind != 'template' AND ${cond('b.text')} LIMIT 60`).all(req.user.id, ...likes);
   const hidden = lockedIds([...new Set(byText.map((r) => r.id))]); // le contenu d'une page verrouillée n'apparaît pas dans la recherche
+  const dbRows = byTitle.filter((p) => db.prepare("SELECT 1 FROM pages WHERE id=(SELECT parent_id FROM pages WHERE id=?) AND kind='database'").get(p.id)).map((p) => p.id);
+  const shut = closedIds(req, dbRows); // titre d'une ligne de base verrouillée : introuvable tant que le code n'a pas été saisi
+  for (let i = byTitle.length - 1; i >= 0; i--) if (shut.has(byTitle[i].id)) byTitle.splice(i, 1);
   const seen = new Set(byTitle.map((p) => p.id)), out = [...byTitle];
   for (const r of byText) {
     if (seen.has(r.id) || hidden.has(r.id) || out.length >= 30) continue;
@@ -158,6 +163,10 @@ pagesRouter.get('/:id', (req, res) => {
   const school = p.kind === 'database' && !!parse(p.props, {})?.dw_school?.enabled;
   const children = db.prepare('SELECT id,kind,title,icon,cover,props,position,created_at FROM pages WHERE parent_id=? AND archived=0 AND kind != \'template\' ORDER BY position')
     .all(p.id).map(({ created_at, ...c }) => ({ ...c, props: p.kind === 'database' ? parse(c.props, {}) : undefined, ...(school && c.kind === 'page' && isLegacyRow(created_at, parse(c.props, {})) ? { legacy: true } : {}) }));
+  if (p.kind === 'database') { // ligne verrouillée et non ouverte : ni titre, ni icône, ni propriétés (seul son identifiant sert à ouvrir l'écran du code)
+    const closed = closedIds(req, children.map((c) => c.id));
+    children.forEach((c, i) => { if (closed.has(c.id)) children[i] = { id: c.id, kind: c.kind, title: '', icon: null, cover: null, props: {}, position: c.position, locked: true }; });
+  }
   const crumbs = []; let cur = p.parent_id, g = 0;
   while (cur && g++ < 50) {
     const c = db.prepare('SELECT id,parent_id,title,icon,kind FROM pages WHERE id=?').get(cur);

@@ -29,6 +29,13 @@ export function redactedLine() {
   return h('p', { class: 'muted small redacted-line' }, 'Contenu : ', h('span', { class: 'o5-bar', style: `width:${w}ch`, 'aria-hidden': 'true' }, ' '), ' — REDACTED');
 }
 
+/** Largeur stable (4 à 17 caractères) d'une barre noire, tirée de l'identifiant : la même ligne a toujours les mêmes barres. */
+const barW = (seed, n = 0) => { let x = n * 131; for (const c of String(seed)) x = (x * 31 + c.charCodeAt(0)) % 9973; return 4 + (x % 14); };
+/** Barre noire façon dossier expurgé (SCP) : titre ou propriété d'une ligne verrouillée. */
+export function redBar(seed, n = 0, label = 'Donnée expurgée') {
+  return h('span', { class: 'o5-bar red-bar', style: `width:${barW(seed, n)}ch`, title: label, role: 'img', 'aria-label': label }, ' ');
+}
+
 /** Page cachée : #/redacted */
 export function o5Page() {
   const bar = (w) => h('span', { class: 'o5-bar', style: `width:${w}ch` }, ' ');

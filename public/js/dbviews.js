@@ -5,6 +5,7 @@
 import { h, ask, modal, toast, confirmBox, safeUrl, uuid } from './util.js';
 import { rtPlain, plainRt } from './richtext.js';
 import { api } from './api.js';
+import { redBar } from './clins.js';
 import { propText, propEditor, titleKey, sortKey, compareProps } from './database.js';
 import { vi, iconNode, ICON_COLORS } from './icons.js';
 import { autoClose } from './menus.js';
@@ -77,6 +78,8 @@ function grabScroll(body) {
 }
 
 /** Pastille jaune : ancienne page du recueil pas encore mise à jour (ouvrir la page pour la mettre à jour). */
+/** Titre d'une ligne : barre noire « expurgée » si la ligne est verrouillée. */
+const ttl = (r) => (r.locked ? h('span', { class: 'red-title' }, redBar(r.id), h('span', { class: 'red-tag' }, 'EXPURGÉ')) : (r.title || 'Sans titre'));
 const legacyDot = (r) => (r.legacy ? h('span', { class: 'arch-dot', title: 'À mettre à jour : ouvre la page pour la moderniser', 'aria-label': 'À mettre à jour' }) : null);
 export function renderDatabase(host, { page, rows, role, onChange }) {
   const editable = role === 'edit' || role === 'owner';
@@ -97,6 +100,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
   const firstOf = (types) => allProps.find((p) => types.includes(schema[p].type));
 
   async function commitRow(r, col, np) {
+    if (r.locked) { toast('Page verrouillée : ouvre-la et saisis le code avant de la modifier', 'error'); return; }
     r.props = { ...(r.props || {}), [col]: np };
     const patch = { props: r.props };
     if (col === tk) { r.title = rtPlain(np.title); patch.title = r.title; }
@@ -290,7 +294,10 @@ function drawTable(root, v, c) {
     editable && schema[col].type === 'number' ? h('button', { class: `th-auto ${schema[col].number?.auto_increment ? 'on' : ''}`, title: schema[col].number?.auto_increment ? 'Numérotation automatique activée (cliquer pour désactiver)' : 'Activer la numérotation automatique', onclick: (e) => { e.stopPropagation(); toggleAuto(col); } }, '#') : null,
     editable && col !== tk ? h('button', { class: 'th-x', title: 'Supprimer la colonne', onclick: async (e) => { e.stopPropagation(); if (await confirmBox(`Supprimer la colonne « ${col} » ? Les valeurs restent dans les lignes mais ne seront plus affichées.`)) { delete schema[col]; await c.saveSchema(); c.redraw(); } } }, '✕') : null)),
   editable ? h('th', { class: 'add-col', onclick: addColumn, title: 'Ajouter une propriété' }, '＋') : null);
-  const body = list.map((r) => h('tr', {}, cols.map((col) => h('td', { class: col === tk ? 'title-cell' : '' },
+  const body = list.map((r) => r.locked ? h('tr', { class: 'row-locked' }, cols.map((col, i) => h('td', { class: col === tk ? 'title-cell' : '' },
+      col === tk ? h('div', { class: 'title-wrap' }, h('a', { href: `/#/page/${r.id}`, class: 'open-row', title: 'Page verrouillée : ouvrir pour saisir le code' }, vi('lock', 15)), ttl(r)) : redBar(r.id, i + 1))),
+    editable ? h('td', { class: 'row-x' }) : null)
+    : h('tr', {}, cols.map((col) => h('td', { class: col === tk ? 'title-cell' : '' },
     col === tk ? h('div', { class: 'title-wrap' }, h('a', { href: `/#/page/${r.id}`, class: 'open-row', title: 'Ouvrir' }, iconNode(r.icon, 16, 'file-text')), legacyDot(r),
       propEditor(schema[col], r.props?.[col] || { type: 'title', title: plainRt(r.title) }, editable, (np) => c.commitRow(r, col, np), c.saveSchema))
       : propEditor(schema[col], r.props?.[col], editable, (np) => c.commitRow(r, col, np), c.saveSchema))),
@@ -348,12 +355,12 @@ function drawBoard(root, v, c) {
     const [{ popMenu }] = [await import('./menus.js')];
     popMenu(e.clientX, e.clientY, [
       { label: 'Ouvrir', icon: 'file-text', fn: () => c.open(r) },
-      editable ? { label: 'Renommer…', icon: 'pencil', fn: async () => {
+      editable && !r.locked ? { label: 'Renommer…', icon: 'pencil', fn: async () => {
         const n = await ask('Renommer', 'Titre', r.title || ''); if (n === null || !n.trim() || n.trim() === r.title) return;
         await c.commitRow(r, tk, { type: 'title', title: plainRt(n.trim()) }); c.redraw();
       } } : null,
-      editable ? { header: 'Déplacer vers' } : null,
-      ...(editable ? groups.filter((g) => g.key !== valueOf(r) && !(g.key == null && !options.length)).map((g) => ({ label: g.key ?? 'Sans valeur', icon: 'arrow-right', fn: () => moveTo(r.id, g.key).then(() => c.redraw()) })) : []),
+      editable && !r.locked ? { header: 'Déplacer vers' } : null,
+      ...(editable && !r.locked ? groups.filter((g) => g.key !== valueOf(r) && !(g.key == null && !options.length)).map((g) => ({ label: g.key ?? 'Sans valeur', icon: 'arrow-right', fn: () => moveTo(r.id, g.key).then(() => c.redraw()) })) : []),
       editable ? 'sep' : null,
       editable ? { label: 'Supprimer', icon: 'trash-2', danger: true, fn: async () => {
         if (!await confirmBox(`Supprimer « ${r.title || 'Sans titre'} » ? La page part à la corbeille.`)) return;
@@ -417,8 +424,8 @@ function drawBoard(root, v, c) {
   }
   function card(r) {
     const props = c.cardProps(v).filter((p) => p !== gp).map((p) => propBadge(schema[p], r.props?.[p])).filter(Boolean);
-    const el = h('div', { class: 'kb-card', draggable: editable ? 'true' : null, onclick: () => c.open(r) },
-      h('div', { class: 'kb-title' }, iconNode(r.icon, 16, 'file-text'), r.title || 'Sans titre', legacyDot(r)), props.length ? h('div', { class: 'kb-props' }, props) : null);
+    const el = h('div', { class: `kb-card${r.locked ? ' card-locked' : ''}`, draggable: editable && !r.locked ? 'true' : null, onclick: () => c.open(r) },
+      h('div', { class: 'kb-title' }, iconNode(r.icon, 16, 'file-text'), ttl(r), legacyDot(r)), props.length ? h('div', { class: 'kb-props' }, props) : null);
     el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/dw-row', r.id); e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); });
     el.addEventListener('dragend', () => el.classList.remove('dragging'));
     el.addEventListener('contextmenu', (e) => { if (!e.sourceCapabilities?.firesTouchEvents && !el.classList.contains('dragging')) cardMenu(e, r); });
@@ -510,7 +517,7 @@ function drawCalendar(root, v, c) {
     const d = new Date(gridStart.getTime() + i * 86400000), k = key(d), items = byDay.get(k) || [];
     const cell = h('div', { class: `cal-cell ${d.getUTCMonth() !== cal.m ? 'other' : ''} ${k === today ? 'today' : ''}`, 'data-day': k },
       h('div', { class: 'cal-num' }, h('span', {}, d.getUTCDate()), editable ? h('button', { class: 'cal-plus', title: 'Ajouter', onclick: async () => { const t = await ask(`Nouvel élément le ${formatDate(k)}`, 'Titre'); if (t === null) return; await c.createRow(t.trim(), { [dp]: { type: 'date', date: { start: k, end: null, time_zone: null } } }); c.redraw(); } }, vi('plus', 13)) : null),
-      ...items.slice(0, 3).map((r) => { const el = h('div', { class: 'cal-item', draggable: editable ? 'true' : null, title: r.title, onclick: () => c.open(r) }, iconNode(r.icon, 13, 'file-text'), h('span', {}, r.title || 'Sans titre'), legacyDot(r));
+      ...items.slice(0, 3).map((r) => { const el = h('div', { class: 'cal-item', draggable: editable && !r.locked ? 'true' : null, title: r.locked ? 'Page verrouillée' : r.title, onclick: () => c.open(r) }, iconNode(r.icon, 13, 'file-text'), h('span', {}, ttl(r)), legacyDot(r));
         const pb = c.cardProps(v).filter((p) => p !== dp).map((p) => propBadge(schema[p], r.props?.[p])).filter(Boolean); if (pb.length) el.append(h('div', { class: 'cal-props' }, pb));
         const ex = h('div', { class: 'cal-ex muted' }); ex.hidden = true; el.append(ex); c.excerpts().then((m) => { if (m[r.id]) { ex.textContent = m[r.id]; ex.hidden = false; } });
         el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/dw-row', r.id); e.dataTransfer.effectAllowed = 'move'; }); return el; }),
@@ -524,7 +531,7 @@ function drawCalendar(root, v, c) {
     h('div', { class: 'cal-bar' }, h('strong', { class: 'cal-title' }, monthName),
       h('button', { class: 'icon-btn', onclick: () => nav(-1), title: 'Mois précédent' }, vi('chevron-left', 16)), h('button', { class: 'btn small', onclick: () => { cal.y = undefined; c.redraw(); } }, 'Aujourd’hui'), h('button', { class: 'icon-btn', onclick: () => nav(1), title: 'Mois suivant' }, vi('chevron-right', 16))),
     h('div', { class: 'cal-grid' }, dow.map((d) => h('div', { class: 'cal-dow' }, d)), cells),
-    undated.length ? h('details', { class: 'cal-undated' }, h('summary', {}, `Sans date (${undated.length})`), undated.map((r) => h('a', { class: 'cal-item', href: `/#/page/${r.id}` }, iconNode(r.icon, 13, 'file-text'), r.title || 'Sans titre', legacyDot(r)))) : null);
+    undated.length ? h('details', { class: 'cal-undated' }, h('summary', {}, `Sans date (${undated.length})`), undated.map((r) => h('a', { class: 'cal-item', href: `/#/page/${r.id}` }, iconNode(r.icon, 13, 'file-text'), ttl(r), legacyDot(r)))) : null);
 }
 
 // ====================================================================== GALERIE
@@ -535,7 +542,7 @@ function drawGallery(root, v, c) {
     const cover = r.cover && safeUrl(r.cover);
     return h('a', { class: 'gal-card', href: `/#/page/${r.id}` },
       h('div', { class: 'gal-cover', style: cover ? `background-image:url("${cover.replace(/["\\]/g, '')}")` : '' }, cover ? null : iconNode(r.icon, 32, 'file-text')),
-      h('div', { class: 'gal-info' }, h('div', { class: 'kb-title' }, iconNode(r.icon, 16, 'file-text'), r.title || 'Sans titre', legacyDot(r)), props.length ? h('div', { class: 'kb-props' }, props) : null));
+      h('div', { class: 'gal-info' }, h('div', { class: 'kb-title' }, iconNode(r.icon, 16, 'file-text'), ttl(r), legacyDot(r)), props.length ? h('div', { class: 'kb-props' }, props) : null));
   }), list.length ? null : h('div', { class: 'muted pad' }, 'Aucune ligne')));
 }
 
@@ -544,6 +551,6 @@ function drawList(root, v, c) {
   const { schema } = c, list = c.sorted(c.rows.filter(c.matches), v);
   root.replaceChildren(h('div', { class: 'lst' }, list.map((r) => {
     const props = c.cardProps(v).map((p) => propBadge(schema[p], r.props?.[p])).filter(Boolean);
-    return h('a', { class: 'lst-row', href: `/#/page/${r.id}` }, iconNode(r.icon, 18, 'file-text'), h('span', { class: 'lst-title' }, r.title || 'Sans titre', legacyDot(r)), props.length ? h('span', { class: 'lst-props' }, props) : null);
+    return h('a', { class: 'lst-row', href: `/#/page/${r.id}` }, iconNode(r.icon, 18, 'file-text'), h('span', { class: 'lst-title' }, ttl(r), legacyDot(r)), props.length ? h('span', { class: 'lst-props' }, props) : null);
   }), list.length ? null : h('div', { class: 'muted pad' }, 'Aucune ligne')));
 }

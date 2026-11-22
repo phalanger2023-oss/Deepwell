@@ -9,7 +9,7 @@ import { prettify, formatDate, getPrefs, setPrefs, deviceTz, allTimezones, today
 import { iconNode, vi, pickIcon, kindIcon, makeIcon, parseIcon, ICON_COLORS } from './icons.js';
 import { popMenu, movePicker, autoClose } from './menus.js';
 import './math.js';
-import { loadingText, o5Page, redactedLine } from './clins.js';
+import { loadingText, o5Page, redactedLine, redBar } from './clins.js';
 import { valueFor, parseBlocksText, blocksFromItems } from './buttons.js';
 
 const S = { settings: {}, me: null, tree: { pages: [], shared: [], sharedRoots: [] }, current: null, editor: null, token: null, dirty: false, saving: null, sel: new Set(), anchor: null };
@@ -603,7 +603,7 @@ async function showPage(id) {
           iconNode(c.icon, 20, kindIcon(c.kind)), h('span', { class: 'lst-title' }, prettify(c.title) || 'Sans titre'), c.kind !== 'database' && n ? h('span', { class: 'muted small' }, `${n} élément${n > 1 ? 's' : ''}`) : null);
       })) : h('div', { class: 'muted pad' }, 'Ce dossier est vide. Ajoutez-y des pages ou d’autres dossiers, ou déplacez-en avec « Déplacer vers… ».')));
   } else if (page.kind === 'database') {
-    renderDatabase(body, { page, rows: children.map((c) => ({ id: c.id, title: c.title, icon: c.icon, cover: c.cover, legacy: c.legacy, props: c.props || {} })), role, onChange: refreshTree });
+    renderDatabase(body, { page, rows: children.map((c) => ({ id: c.id, title: c.title, icon: c.icon, cover: c.cover, legacy: c.legacy, locked: c.locked, props: c.props || {} })), role, onChange: refreshTree });
   } else {
     const host = h('div', {});
     body.append(host);
@@ -620,7 +620,7 @@ async function showPage(id) {
       mountDatabase: async (host, dbId) => {
         const d = await api.get(`/api/pages/${dbId}${S.token ? `?token=${encodeURIComponent(S.token)}` : ''}`);
         if (d.page.kind !== 'database') return false;
-        renderDatabase(host, { page: d.page, rows: d.children.map((x) => ({ id: x.id, title: x.title, icon: x.icon, cover: x.cover, legacy: x.legacy, props: x.props || {} })), role: S.token ? 'view' : d.role, onChange: refreshTree });
+        renderDatabase(host, { page: d.page, rows: d.children.map((x) => ({ id: x.id, title: x.title, icon: x.icon, cover: x.cover, legacy: x.legacy, locked: x.locked, props: x.props || {} })), role: S.token ? 'view' : d.role, onChange: refreshTree });
         return true;
       },
       commentBlock: S.token ? null : (blockId, label, quote, anchor) => showComments(page, role, { block_id: blockId, label, quote, anchor }),
@@ -775,7 +775,7 @@ function lockScreen(id, info) {
     catch (x) { err.textContent = x.message; pin.select(); }
   } }, pin, h('button', { class: 'btn primary', type: 'submit' }, 'Ouvrir'));
   mainEl.replaceChildren(topbar([]), h('div', { class: 'lock-screen' },
-    h('div', { class: 'lock-big', title: 'P.C.S. actives' }, vi('lock', 26)), h('h2', {}, prettify(info.page?.title) || 'Page verrouillée'),
+    h('div', { class: 'lock-big', title: 'P.C.S. actives' }, vi('lock', 26)), h('h2', {}, info.page?.title ? prettify(info.page.title) : h('span', { class: 'red-title' }, redBar(id, 0), h('span', { class: 'red-tag' }, 'EXPURGÉ'))),
     h('p', { class: 'muted' }, 'Cette page est protégée par un code d’accès.'), redactedLine(), form, err));
   setTimeout(() => pin.focus(), 50);
 }
@@ -800,7 +800,7 @@ for (const ev of ['keydown', 'pointerdown', 'wheel', 'touchstart']) document.add
 function pinField(label) { return h('input', { class: 'input', type: 'password', placeholder: label, autocomplete: 'new-password' }); }
 function lockDialog(page, editing) {
   const cur = pinField('Code actuel'), p1 = pinField(editing ? 'Nouveau code (vide = inchangé)' : 'Code (4 caractères minimum)'), p2 = pinField('Confirmer le code');
-  const idle = h('select', { class: 'input' }, [[5, '5 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 heure'], [0, 'Jamais (jusqu’à la déconnexion)']].map(([v, l]) => h('option', { value: v, selected: v === (S.lockInfo?.idle ?? 15) }, l)));
+  const idle = h('select', { class: 'input' }, [[5, '5 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 heure'], [1440, '24 heures (par défaut)'], [0, 'Jamais (jusqu’à la déconnexion)']].map(([v, l]) => h('option', { value: v, selected: v === (S.lockInfo?.idle ?? 1440) }, l)));
   const err = h('div', { class: 'lock-err' });
   const m = modal(editing ? 'Modifier le verrou' : 'Verrouiller la page', h('div', { class: 'btn-dlg' },
     h('p', { class: 'muted small' }, 'Un code (PIN ou mot de passe) sera demandé pour ouvrir cette page et ses sous-pages, y compris à vous. Il n’est pas récupérable : conservez-le.'),
