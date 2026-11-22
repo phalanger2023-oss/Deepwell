@@ -40,6 +40,65 @@ function starters() {
   return [{ title: 'P.S.A. #00-26-', icon: null, blocks: psa }, { title: 'Fiche de révision', icon: null, blocks: revision }, { title: 'Exercices', icon: null, blocks: exo }];
 }
 
+
+/* ───────── Architecture de référence (mise à jour des anciennes pages) ───────── */
+const STRUCT = new Set(['heading_1', 'heading_2', 'heading_3', 'toggle', 'divider', 'callout', 'button', 'school_files']);
+const normKey = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[\s:]+$/g, '').replace(/^titre\s+/, '').trim();
+const isContainer = (b) => b.type === 'toggle' || /^heading_/.test(b.type);
+const isAddBtn = (b) => b.type === 'button' && (b.content?.actions || []).some((a) => a.type === 'add_subpage');
+const emptyText = (n) => !textOf(n.b.content).trim() && !['divider', 'button', 'school_files', 'child_page', 'child_database', 'image', 'file', 'pdf', 'video', 'audio', 'embed', 'bookmark', 'table', 'column_list'].includes(n.b.type);
+
+/** Squelette d'une page : on garde la structure (titres, blocs déroulants, séparateurs, encadrés, boutons, panneau de fichiers), pas le texte du cours. */
+export function captureReference(list) {
+  const kids = (id) => list.filter((b) => (b.parent_id || null) === id);
+  const walk = (id) => kids(id).filter((b) => STRUCT.has(b.type)).map((b) => ({ type: b.type, content: b.content || {}, children: walk(b.id) }));
+  return walk(null);
+}
+const treeOf = (list) => {
+  const nodes = new Map(list.map((b) => [b.id, { b, kids: [] }])), roots = [];
+  for (const b of list) { const n = nodes.get(b.id); (b.parent_id && nodes.get(b.parent_id) ? nodes.get(b.parent_id).kids : roots).push(n); }
+  return roots;
+};
+
+/** Reconstruit la page selon l'architecture de référence ; le contenu de l'ancienne page est recasé sous les sections de même nom. */
+export function rebuildFromReference(ref, list) {
+  const old = treeOf(list), used = new Set();
+  const mk = (r, parent) => { const n = { b: { id: uid(), parent_id: parent, type: r.type, content: JSON.parse(JSON.stringify(r.content || {})) }, kids: [], after: [] }; n.kids = (r.children || []).map((c) => mk(c, n.b.id)); return n; };
+  const fresh = ref.map((r) => mk(r, null));
+  const eachOld = (nodes, fn, parent = null) => { for (const n of nodes) { fn(n, parent, nodes); eachOld(n.kids, fn, n); } };
+  const consume = (n) => { used.add(n.b.id); n.kids.forEach(consume); };
+  // 1. l'encadré de date de l'ancienne page remplace celui de la référence
+  const oldDate = old.find((n) => n.b.type === 'callout' && JSON.stringify(n.b.content).includes('"mention"'));
+  const eachNew = (nodes, fn) => { for (const n of nodes) { fn(n); eachNew(n.kids, fn); } };
+  let dateDone = false;
+  eachNew(fresh, (n) => { if (!dateDone && oldDate && n.b.type === 'callout' && JSON.stringify(n.b.content).includes('"mention"')) { n.b.content = oldDate.b.content; consume(oldDate); dateDone = true; } });
+  // 2. chaque section de la référence reprend le contenu de la section de même nom
+  const level = (t) => (/^heading_(\d)/.exec(t) || [])[1] * 1 || 9;
+  const conts = []; eachNew(fresh, (n) => { if (isContainer(n.b)) conts.push(n); });
+  const isFlat = (n) => !(n.b.type === 'toggle' || n.b.content?.is_toggleable);
+  conts.sort((a, b) => isFlat(a) - isFlat(b)); // d'abord les blocs déroulants (précis), ensuite les titres « à plat » qui prennent ce qui reste
+  conts.forEach((C) => {
+    const k = normKey(textOf(C.b.content)); if (!k) return;
+    let found = null; eachOld(old, (n, parent, sib) => { if (!found && !used.has(n.b.id) && isContainer(n.b) && normKey(textOf(n.b.content)) === k) found = { n, sib }; });
+    if (!found) return;
+    const { n: O, sib } = found; let body = O.kids;
+    if (!body.length && !(O.b.type === 'toggle' || O.b.content?.is_toggleable)) { // titre « à plat » : ce qui le suit jusqu'au titre suivant de même niveau ou plus haut
+      body = []; for (let i = sib.indexOf(O) + 1; i < sib.length; i++) { const x = sib[i]; if (used.has(x.b.id)) continue; if (x.b.type === 'divider' || (/^heading_/.test(x.b.type) && level(x.b.type) <= level(O.b.type))) break; body.push(x); }
+    }
+    consume(O); body.forEach(consume);
+    const keep = body.filter((x) => !isAddBtn(x.b) && !(emptyText(x) && !x.kids.length));
+    if (C.b.type === 'toggle' || C.b.content?.is_toggleable) C.kids.push(...keep); else C.after.push(...keep);
+  });
+  // 3. tout toggle sans contenu reçoit un bloc de texte vide pour pouvoir écrire dedans
+  eachNew(fresh, (n) => { if ((n.b.type === 'toggle' || n.b.content?.is_toggleable) && !n.kids.some((k) => k.b.type !== 'button')) n.kids.push({ b: { id: uid(), parent_id: n.b.id, type: 'paragraph', content: { rich_text: [], icon: null, color: 'default' } }, kids: [], after: [] }); });
+  // 4. ce qui n'a trouvé aucune place est conservé tel quel en bas de page
+  const left = old.filter((n) => !used.has(n.b.id) && !isAddBtn(n.b) && n.b.type !== 'divider' && !(emptyText(n) && !n.kids.length));
+  if (left.length) fresh.push({ b: { id: uid(), parent_id: null, type: 'heading_2', content: { rich_text: [{ type: 'text', text: { content: 'À classer' }, plain_text: 'À classer', annotations: {} }], is_toggleable: false, color: 'default' } }, kids: [], after: left });
+  const out = []; const emit = (n, parent) => { out.push({ ...n.b, parent_id: parent }); n.kids.forEach((k) => emit(k, n.b.id)); (n.after || []).forEach((k) => emit(k, parent)); };
+  fresh.forEach((n) => emit(n, null));
+  return out;
+}
+
 function dbOf(req, id, level) {
   const d = db.prepare('SELECT id,kind,props,schema,owner_id FROM pages WHERE id=?').get(id);
   if (!d || d.kind !== 'database' || !accessFor(req.user, id)) throw err('Base introuvable', 404);
@@ -111,10 +170,12 @@ export function templatesRoutes(router, { autoProps, defaultProps, schoolPageCha
     const count = (b) => 1 + kids(b.id).reduce((n, c) => n + count(c), 0);
     const top = list.filter((b) => !b.parent_id);
     const old = (b) => /^(titre )?(modifie|original)\b/.test(normT(textOf(b.content))) && ['toggle', 'heading_1', 'heading_2', 'heading_3', 'paragraph'].includes(b.type);
-    if (req.body?.dry !== false) return res.json({ dry: true, title: p.title, blocks: top.map((b) => ({ id: b.id, type: b.type, text: textOf(b.content).slice(0, 80), size: count(b), suggested: old(b) })) });
+    const ref = parse(db.prepare('SELECT props FROM pages WHERE id=?').get(p.parent_id)?.props, {})?.dw_arch_ref;
+    if (req.body?.dry !== false) return res.json({ dry: true, title: p.title, reference: ref?.title || null, blocks: top.map((b) => ({ id: b.id, type: b.type, text: textOf(b.content).slice(0, 80), size: count(b), suggested: old(b) })) });
     const remove = new Set((Array.isArray(req.body?.remove) ? req.body.remove : []).filter((id) => top.some((b) => b.id === id)));
     let grew = true; while (grew) { grew = false; for (const b of list) if (b.parent_id && remove.has(b.parent_id) && !remove.has(b.id)) { remove.add(b.id); grew = true; } }
     let out = list.filter((b) => !remove.has(b.id)), added = 0;
+    if (ref?.tree?.length) out = rebuildFromReference(ref.tree, out);
     // le bouton « Nouvel addendum » doit être présent dans la section Addenda
     const t2 = out.filter((b) => !b.parent_id), hi = t2.findIndex((b) => /^heading_/.test(b.type) && /^addenda/i.test(textOf(b.content).trim()));
     if (hi >= 0 && !out.some((b) => b.type === 'button' && (b.content.actions || []).some((a) => a.type === 'add_subpage'))) {
@@ -129,7 +190,20 @@ export function templatesRoutes(router, { autoProps, defaultProps, schoolPageCha
       const props = { ...(parse(p.props, {}) || {}), dw_arch: 'done' };
       db.prepare('UPDATE pages SET props=?, updated_at=? WHERE id=?').run(JSON.stringify(props), now(), p.id);
     });
-    res.json({ ok: true, removed: remove.size, buttons: added });
+    res.json({ ok: true, removed: remove.size, buttons: added, rebuilt: !!ref?.tree?.length });
+  });
+  /** Mode développeur : « Définir comme architecture de référence » : la structure de cette page sert de modèle à la mise à jour des anciennes pages de la base. */
+  router.post('/:id/arch-reference', requireAuth, (req, res) => {
+    if (getSetting('dev_mode', '0') !== '1') throw err('Cette action nécessite le mode développeur (Réglages → Développeur).', 403);
+    const p = db.prepare("SELECT id,parent_id,title FROM pages WHERE id=? AND kind='page'").get(req.params.id);
+    if (!p || !p.parent_id || !can(accessFor(req.user, p.id), 'edit')) throw err('Page introuvable', 404);
+    const d = db.prepare("SELECT id,props FROM pages WHERE id=? AND kind='database'").get(p.parent_id);
+    if (!d || !parse(d.props, {})?.dw_school?.enabled || !can(accessFor(req.user, d.id), 'edit')) throw err('Cette page n’appartient pas à une base scolaire.', 409);
+    const list = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(p.id).map((b) => ({ id: b.id, parent_id: b.parent_id, type: b.type, content: parse(b.content, {}) }));
+    const tree = captureReference(list);
+    if (!tree.length) throw err('Cette page n’a aucune structure (titres, blocs déroulants…) à utiliser comme référence.', 409);
+    db.prepare('UPDATE pages SET props=?, updated_at=? WHERE id=?').run(JSON.stringify({ ...parse(d.props, {}), dw_arch_ref: { title: p.title, tree, at: now() } }), now(), d.id);
+    res.json({ ok: true, blocks: list.length, kept: JSON.stringify(tree).split('"type"').length - 1 });
   });
   /** Mode développeur : « Marquer comme modifiée » (retire la pastille et le bouton sans toucher au contenu). */
   router.post('/:id/modernize/mark', requireAuth, (req, res) => {

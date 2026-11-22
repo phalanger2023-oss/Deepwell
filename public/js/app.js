@@ -488,6 +488,7 @@ async function modernizeDialog(page, onDone) {
   const label = (t) => ({ toggle: 'Bloc déroulant', heading_1: 'Titre 1', heading_2: 'Titre 2', heading_3: 'Titre 3', paragraph: 'Texte', callout: 'Encadré', divider: 'Séparateur', button: 'Bouton' }[t] || t);
   const rows = plan.blocks.map((b, i) => h('label', { class: 'arch-row' }, checks[i], h('span', { class: 'muted small' }, label(b.type)), h('span', {}, b.text || '(vide)'), b.size > 1 ? h('span', { class: 'muted small' }, `+ ${b.size - 1} bloc(s) à l’intérieur`) : null));
   const m = modal('Mettre à jour cette page', h('div', {},
+    plan.reference ? h('p', { class: 'arch-ref' }, vi('layout-template', 14), ` La page sera reconstruite selon l’architecture de « ${plan.reference} » : ton contenu est recasé sous les sections du même nom, le reste va dans « À classer » en bas.`) : null,
     h('p', {}, 'Coche ce qui doit être retiré (l’ancienne structure « Original / Modifié » est déjà cochée). Le bouton « Nouvel addendum » est ajouté dans la section Addenda s’il manque. Une version de secours de la page est conservée : tu peux revenir en arrière depuis l’historique.'),
     h('div', { class: 'arch-list' }, rows.length ? rows : h('p', { class: 'muted' }, 'La page est vide.')),
     h('div', { class: 'row-end' }, h('button', { class: 'btn', onclick: () => m.close() }, 'Annuler'),
@@ -898,6 +899,12 @@ function pageMenu(anchor, page, role, editable) {
   if (editable) {
     items.push({ label: page.icon ? 'Changer l’icône' : 'Ajouter une icône', icon: 'smile-plus', fn: async () => { const v = await pickIcon(page.icon); if (v === null) return; await api.patch(`/api/pages/${page.id}`, { icon: v || null }); await refreshTree(); showPage(page.id); } });
     items.push({ label: page.cover ? 'Changer la couverture' : 'Ajouter une couverture', icon: 'image-plus', fn: () => coverDialog(page) });
+  }
+  if (editable && S.settings.dev_mode === '1' && S.pageMap?.get(page.parent_id)?.kind === 'database') {
+    items.push({ label: 'Définir comme architecture de référence', icon: 'layout-template', fn: async () => {
+      if (!await confirmBox('Utiliser la structure de cette page (titres, blocs déroulants, séparateurs, boutons) comme modèle pour « Mettre à jour cette page » sur toutes les anciennes pages de cette base ?', 'Définir')) return;
+      try { const r = await api.post(`/api/pages/${page.id}/arch-reference`); toast(`Architecture de référence enregistrée (${r.kept} blocs de structure)`); } catch (e) { toast(e.message, 'error'); }
+    } });
   }
   if (editable) {
     items.push({ label: 'Dupliquer', icon: 'copy', fn: () => duplicatePage(page) });

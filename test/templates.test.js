@@ -165,3 +165,32 @@ test('lignes d’une base scolaire : drapeau « legacy » renvoyé pour les anci
   assert.equal(kids.find((k) => k.id === o.id).legacy, true); assert.ok(!kids.find((k) => k.id === n.id).legacy);
   assert.ok(!('created_at' in kids[0]), 'created_at n’est pas exposé');
 });
+
+test('architecture de référence : capture réservée au mode développeur, reconstruction de l’ancienne page avec recasement du contenu', async () => {
+  const d = (await api('POST', '/api/pages', { title: 'Recueil réf', kind: 'database' })).body;
+  await api('PATCH', `/api/pages/${d.id}`, { schema: { Name: { id: 'title', name: 'Name', type: 'title', title: {} } }, props: { dw_school: { enabled: true, options: {} } } });
+  const mk = async (title) => (await api('POST', `/api/pages`, { title, parent_id: d.id })).body;
+  const ref = await mk('P.S.A. #0001-26-MTH'), old = await mk('Vieux');
+  const DB = await import('../server/db.js');
+  DB.db.prepare('UPDATE pages SET created_at=? WHERE id=?').run(Date.UTC(2026, 9, 1), old.id);
+  const T = (type, text, id, parent = null, extra = {}) => ({ id, parent_id: parent, type, content: { rich_text: text ? [{ type: 'text', text: { content: text, link: null }, plain_text: text, annotations: {} }] : [], ...extra } });
+  await api('PUT', `/api/pages/${ref.id}/blocks`, { blocks: [T('heading_1', 'Cours', 'r1'), T('paragraph', 'texte du modèle', 'r1p'), T('divider', '', 'r2'), T('heading_1', 'Addenda', 'r3'), T('toggle', 'Émanant du P.S.A.', 'r4'), { id: 'r5', parent_id: 'r4', type: 'button', content: { label: 'Nouvel addendum', actions: [{ type: 'add_subpage', title: 'x', text: '', where: 'below' }] } }, T('toggle', 'Lié à la P.S.A.', 'r6')] });
+  assert.equal((await api('POST', `/api/pages/${ref.id}/arch-reference`)).status, 403, 'réservé au mode développeur');
+  DB.setSetting('dev_mode', '1');
+  const cap = (await api('POST', `/api/pages/${ref.id}/arch-reference`)).body; assert.equal(cap.ok, true);
+  await api('PUT', `/api/pages/${old.id}/blocks`, { blocks: [T('paragraph', 'Note orpheline', 'xz'), T('heading_1', 'Cours :', 'xa'), T('heading_2', 'Original :', 'xb', null, { is_toggleable: true }), T('paragraph', 'ancien texte', 'xbp', 'xb'), T('paragraph', 'Mon cours important', 'xc'), T('heading_1', 'Addenda :', 'xf'), T('toggle', 'Émanant du P.S.A.', 'xg'), T('paragraph', 'addendum perdu', 'xgp', 'xg')] });
+  const plan = (await api('POST', `/api/pages/${old.id}/modernize`, { dry: true })).body; assert.equal(plan.reference, 'P.S.A. #0001-26-MTH');
+  const r = (await api('POST', `/api/pages/${old.id}/modernize`, { dry: false, remove: ['xb'] })).body; assert.equal(r.rebuilt, true);
+  const got = (await api('GET', `/api/pages/${old.id}`)).body.blocks;
+  const txt = (b) => (b.content.rich_text || []).map((x) => x.plain_text).join('');
+  const by = (t) => got.find((b) => txt(b) === t);
+  assert.ok(by('Cours') && by('Addenda') && by('Émanant du P.S.A.') && by('Lié à la P.S.A.'), 'structure de la référence');
+  assert.ok(!by('texte du modèle'), 'le texte de la référence n’est pas copié');
+  assert.ok(!by('ancien texte'), 'Original/Modifié coché : retiré');
+  assert.equal(by('Mon cours important').parent_id ?? null, null, 'recasé après le titre « Cours » (titre non déroulant)');
+  const idx = (t) => got.findIndex((b) => txt(b) === t);
+  assert.ok(idx('Cours') < idx('Mon cours important') && idx('Mon cours important') < idx('Addenda'));
+  assert.equal(by('addendum perdu').parent_id, by('Émanant du P.S.A.').id, 'recasé dans le bloc déroulant de même nom');
+  assert.ok(idx('À classer') > idx('Lié à la P.S.A.') && by('Note orpheline'), 'le reste en bas sous « À classer »');
+  assert.equal(got.filter((b) => b.type === 'button').length, 1, 'un seul bouton (celui de la référence)');
+});
