@@ -50,13 +50,15 @@ function peekRow(r, onChange) {
  * « Attraper » le fond d'une vue avec la souris pour la faire défiler (comme une main sur une carte) : tableau, Kanban, galerie, liste, calendrier.
  * Horizontal : le tableau ou le Kanban s'il déborde ; vertical : la page. Cartes, liens, boutons et champs gardent leur comportement normal.
  */
-const NO_GRAB = 'button, input, select, textarea, label, th, [contenteditable="true"], [draggable="true"], .kb-card, .cal-ev, .add-col, .cal-plus';
+const NO_GRAB = 'button, input, select, textarea, label, th, [contenteditable="true"], [draggable="true"], .kb-card, .cal-ev, .add-col, .cal-plus, .kb-track';
 function grabScroll(body) {
   body.addEventListener('mousedown', (e) => {
-    if (e.button !== 0 || e.target.closest(NO_GRAB)) return;
-    const link = e.target.closest('a'), cardLink = link?.matches('.gal-card, .lst-row'); // cartes de la galerie et lignes de la liste : on peut les attraper, un simple clic les ouvre toujours
+    // Une carte du Kanban se déplace d'une colonne à l'autre : pour la saisir comme fond, clic molette ou Maj + glisser.
+    const forced = !!e.target.closest('.kb-card') && (e.button === 1 || (e.button === 0 && e.shiftKey));
+    if (!(e.button === 0 || forced) || (e.target.closest(NO_GRAB) && !forced)) return;
+    const link = e.target.closest('a'), cardLink = forced || link?.matches('.gal-card, .lst-row'); // cartes de la galerie, lignes de la liste : on peut les attraper, un simple clic les ouvre toujours
     if (link && !cardLink) return;
-    if (cardLink) e.preventDefault(); // pas de « glisser le lien » du navigateur
+    if (cardLink) e.preventDefault(); // pas de « glisser le lien » ni de glisser-déposer de la carte
     const hs = e.target.closest('.kb-board, .db-scroll') || body.querySelector('.kb-board, .db-scroll'), vs = body.closest('.scroll') || document.scrollingElement;
     const x0 = e.clientX, y0 = e.clientY, sx = hs ? hs.scrollLeft : 0, sy = vs ? vs.scrollTop : 0;
     let on = false;
@@ -129,6 +131,34 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     draw(); open(row);
   }
   const openTemplates = async (anchor) => { try { (await import('./templates.js')).openTemplateMenu(anchor, { page, onPick: (t) => createFromTemplate(t).catch((e) => toast(e.message, 'error')) }); } catch (e) { toast(e.message, 'error'); } };
+  // Valeurs par défaut : chaque nouvelle ligne (bouton, Kanban, calendrier, bouton d'automatisation) les reçoit ; une colonne du Kanban ou un modèle les remplace.
+  const DEF_TYPES = ['select', 'status', 'multi_select', 'checkbox', 'number', 'rich_text', 'url', 'email', 'phone_number'];
+  const defCandidates = () => allProps.filter((p) => p !== tk && DEF_TYPES.includes(schema[p].type));
+  const defCount = () => Object.keys(page.props?.dw_defaults || {}).filter((k) => schema[k]).length;
+  const emptyFor = (t) => ({ type: t, [t]: t === 'multi_select' || t === 'rich_text' ? [] : t === 'checkbox' ? false : null });
+  const openDefaults = () => {
+    const defs = { ...(page.props?.dw_defaults || {}) };
+    const persist = async () => {
+      const props = { ...(page.props || {}), dw_defaults: defs };
+      if (!Object.keys(defs).length) delete props.dw_defaults;
+      try { await api.patch(`/api/pages/${page.id}`, { props }); page.props = props; } catch (e) { toast(e.message, 'error'); }
+    };
+    const box = h('div', { class: 'defs' });
+    const redraw = () => {
+      const used = Object.keys(defs).filter((k) => schema[k]), free = defCandidates().filter((p) => !used.includes(p));
+      const adder = free.length ? h('select', { class: 'input', onchange: async (e) => { const k = e.target.value; if (!k) return; defs[k] = emptyFor(schema[k].type); await persist(); redraw(); } },
+        h('option', { value: '' }, 'Ajouter une valeur par défaut…'), free.map((p) => h('option', { value: p }, p))) : null;
+      box.replaceChildren(...[
+        used.length ? null : h('p', { class: 'muted small' }, 'Aucune valeur par défaut. Exemple : « Statut » = « À faire » pour que chaque nouvelle ligne arrive dans cette colonne du Kanban.'),
+        ...used.map((k) => h('div', { class: 'defs-row' }, h('span', { class: 'defs-name' }, k),
+          h('span', { class: 'defs-val' }, propEditor(schema[k], defs[k], true, async (np) => { defs[k] = np; await persist(); }, saveSchema)),
+          h('button', { class: 'icon-btn', title: 'Retirer cette valeur par défaut', onclick: async () => { delete defs[k]; await persist(); redraw(); } }, vi('x', 15)))),
+        adder].filter(Boolean));
+    };
+    redraw();
+    modal('Valeurs par défaut des nouvelles lignes', h('div', {}, box,
+      h('p', { class: 'muted small' }, 'Elles s’appliquent aux nouvelles lignes (bouton « Nouvelle ligne », modèles, boutons d’automatisation). Une colonne du Kanban ou un modèle qui indique déjà une valeur garde la sienne.')));
+  };
   const openSchoolSettings = async () => { try { (await import('./school.js')).openDatabaseSettings(page, { onSaved: () => draw() }); } catch (e) { toast(e.message, 'error'); } };
   const open = (r, forceFull) => { if (forceFull || fullDefault()) location.hash = `#/page/${r.id}`; else peekRow(r, onChange); };
   host.addEventListener('click', (e) => {
@@ -154,6 +184,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     editable ? h('button', { class: 'dbv-add', title: 'Ajouter une vue', onclick: (e) => addViewMenu(e.currentTarget) }, vi('plus', 15), 'Vue') : null);
     const tools = h('div', { class: 'dbv-tools' }, h('input', { class: 'input dbv-filter', placeholder: 'Filtrer…', value: filter, oninput: (e) => { filter = e.target.value; clearTimeout(draw.t); draw.t = setTimeout(() => drawBody(), 120); } }), ...toolControls(v),
       editable && schoolDrive() ? h('button', { class: 'btn small', title: 'Crée la page du chapitre et son dossier sur Google Drive', onclick: newChapter }, vi('folder', 14), 'Nouveau chapitre') : null,
+      editable && defCandidates().length ? h('button', { class: 'btn small', title: 'Valeurs par défaut des nouvelles lignes', onclick: openDefaults }, vi('sliders-horizontal', 14), 'Par défaut', defCount() ? h('span', { class: 'rel-tag' }, defCount()) : null) : null,
       editable ? h('button', { class: 'btn small', title: 'Réglages de la base', onclick: openSchoolSettings }, vi('settings', 14), 'Réglages', schoolOn() ? h('span', { class: 'rel-tag' }, 'Scolaire') : null) : null,
       editable ? h('span', { class: 'btn-split' },
         h('button', { class: 'btn primary small', onclick: async () => {
@@ -293,7 +324,7 @@ function drawBoard(root, v, c) {
     col.addEventListener('drop', (e) => { col.classList.remove('over'); const id = e.dataTransfer.getData('text/dw-row'); if (id) { e.preventDefault(); moveTo(id, key); } });
     const addBtn = editable ? h('button', { class: 'kb-add', onclick: async () => {
       const t = await ask(`Nouvelle carte${key ? ` — ${key}` : ''}`, 'Titre');
-      if (t === null) return; const r = await c.createRow(t.trim(), key == null ? {} : { [gp]: { type, [type]: opt } }); c.redraw();
+      if (t === null) return; const r = await c.createRow(t.trim(), { [gp]: { type, [type]: key == null ? null : opt } }); c.redraw();
     } }, vi('plus', 14), 'Nouvelle carte') : null;
     col.append(h('div', { class: 'kb-head' }, opt ? chip(opt) : h('span', { class: 'chip' }, 'Sans valeur'), h('span', { class: 'muted small' }, cards.length)),
       h('div', { class: 'kb-cards' }, c.sorted(cards, v).map((r) => card(r))), addBtn);
@@ -312,10 +343,23 @@ function drawBoard(root, v, c) {
     def[type] = { ...def[type], options: [...options, { name: n, color: 'default' }] }; await c.saveSchema(); c.redraw();
   } }, vi('plus', 14), 'Groupe') : null;
   const board = h('div', { class: 'kb-board' }, ...cols, addGroup);
-  const wrap = h('div', { class: 'kb-wrap' }, board,
+  // Barre de navigation en haut : toujours visible quand le Kanban déborde ; on tire le curseur, ou on clique pour sauter.
+  const thumb = h('div', { class: 'kb-thumb' }), track = h('div', { class: 'kb-track', title: 'Faire défiler les colonnes' }, thumb);
+  thumb.addEventListener('mousedown', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const x0 = e.clientX, s0 = board.scrollLeft, k = board.scrollWidth / track.clientWidth;
+    const move = (m) => { board.scrollLeft = s0 + (m.clientX - x0) * k; };
+    const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); thumb.classList.remove('drag'); };
+    thumb.classList.add('drag'); document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  });
+  track.addEventListener('mousedown', (e) => { if (e.target === thumb) return; e.preventDefault(); const r = track.getBoundingClientRect(); board.scrollLeft = ((e.clientX - r.left) / r.width) * board.scrollWidth - board.clientWidth / 2; });
+  const wrap = h('div', { class: 'kb-wrap' }, track, board,
     h('button', { class: 'kb-nav prev', title: 'Colonnes précédentes', 'aria-label': 'Colonnes précédentes', onclick: () => board.scrollBy({ left: -Math.max(240, board.clientWidth * 0.8), behavior: 'smooth' }) }, vi('chevron-left', 18)),
     h('button', { class: 'kb-nav next', title: 'Colonnes suivantes', 'aria-label': 'Colonnes suivantes', onclick: () => board.scrollBy({ left: Math.max(240, board.clientWidth * 0.8), behavior: 'smooth' }) }, vi('chevron-right', 18)));
-  const sync = () => { const max = board.scrollWidth - board.clientWidth; wrap.classList.toggle('can-prev', board.scrollLeft > 2); wrap.classList.toggle('can-next', board.scrollLeft < max - 2); };
+  const sync = () => {
+    const max = board.scrollWidth - board.clientWidth; wrap.classList.toggle('can-prev', board.scrollLeft > 2); wrap.classList.toggle('can-next', board.scrollLeft < max - 2); wrap.classList.toggle('can-scroll', max > 2);
+    if (max > 2) { thumb.style.width = `${(board.clientWidth / board.scrollWidth) * 100}%`; thumb.style.left = `${(board.scrollLeft / board.scrollWidth) * 100}%`; }
+  };
   board.addEventListener('scroll', sync, { passive: true });
   // Molette : sur le fond ou l'en-tête d'une colonne, elle fait défiler le Kanban de gauche à droite (dans une colonne, elle reste verticale).
   board.addEventListener('wheel', (e) => {

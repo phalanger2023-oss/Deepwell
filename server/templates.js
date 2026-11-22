@@ -84,7 +84,7 @@ function resolveMentions(content, today) {
   return walk(content);
 }
 
-export function templatesRoutes(router, { autoProps, schoolPageChanged }) {
+export function templatesRoutes(router, { autoProps, defaultProps, schoolPageChanged }) {
   router.get('/:id/templates', requireAuth, (req, res) => {
     const d = dbOf(req, req.params.id, 'view');
     if (can(accessFor(req.user, d.id), 'edit')) seedIfNeeded(d);
@@ -118,7 +118,7 @@ export function templatesRoutes(router, { autoProps, schoolPageChanged }) {
     const id = uid(), t = now();
     tx(() => {
       const max = db.prepare('SELECT COALESCE(MAX(position),0) m FROM pages WHERE parent_id=?').get(d.id).m;
-      const tprops = parse(tpl.props, {}) || {}, props = {};
+      const tprops = parse(tpl.props, {}) || {}, props = { ...defaultProps(d.id) }; // valeurs par défaut de la base, que le modèle peut remplacer
       for (const [k, v] of Object.entries(tprops)) if (!TIME_PROPS.has(v?.type) && !k.startsWith('dw_')) props[k] = v;
       Object.assign(props, autoProps(d.id));
       db.prepare(`INSERT INTO pages(id,parent_id,owner_id,kind,title,icon,cover,props,position,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)

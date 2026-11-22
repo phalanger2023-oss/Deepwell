@@ -110,6 +110,23 @@ function autoProps(parentId) {
   return out;
 }
 
+/**
+ * Valeurs par défaut d'une base (réglage « Valeurs par défaut ») : enregistrées dans les propriétés de la base (`dw_defaults`, une valeur par propriété).
+ * Une nouvelle ligne les reçoit ; les valeurs qui ne correspondent plus à une propriété existante du même type sont ignorées.
+ */
+const DEFAULT_TYPES = new Set(['select', 'status', 'multi_select', 'checkbox', 'number', 'rich_text', 'url', 'email', 'phone_number']);
+function defaultProps(parentId) {
+  const par = parentId && db.prepare('SELECT kind, schema, props FROM pages WHERE id=?').get(parentId);
+  if (!par || par.kind !== 'database') return {};
+  const schema = parse(par.schema, {}) || {}, defs = parse(par.props, {})?.dw_defaults, out = {};
+  if (!defs || typeof defs !== 'object') return out;
+  for (const [k, v] of Object.entries(defs)) {
+    const d = schema[k];
+    if (d && DEFAULT_TYPES.has(d.type) && v && v.type === d.type) out[k] = v;
+  }
+  return out;
+}
+
 pagesRouter.post('/', requireAuth, (req, res) => {
   const { parent_id = null, title = '', kind = 'page', icon = null } = req.body || {};
   let owner = req.user.id;
@@ -122,14 +139,14 @@ pagesRouter.post('/', requireAuth, (req, res) => {
   const max = db.prepare('SELECT COALESCE(MAX(position),0) m FROM pages WHERE parent_id IS ? AND owner_id=?').get(parent_id, owner).m;
   const schema = kind === 'database'
     ? JSON.stringify({ Name: { id: 'title', name: 'Name', type: 'title', title: {} } }) : null;
-  const props = JSON.stringify(autoProps(parent_id));
+  const props = JSON.stringify({ ...defaultProps(parent_id), ...autoProps(parent_id) });
   db.prepare(`INSERT INTO pages(id,parent_id,owner_id,kind,title,icon,props,schema,position,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(id, parent_id, owner, ['database', 'folder'].includes(kind) ? kind : 'page',
     String(title).slice(0, 500), str(icon, 200) ?? null, props, schema, max + 1, t, t);
   res.json(pageRow(db.prepare('SELECT * FROM pages WHERE id=?').get(id)));
 });
 
-templatesRoutes(pagesRouter, { autoProps, schoolPageChanged });
+templatesRoutes(pagesRouter, { autoProps, defaultProps, schoolPageChanged });
 
 pagesRouter.get('/:id', (req, res) => {
   const role = accessFor(req.user, req.params.id, token(req));

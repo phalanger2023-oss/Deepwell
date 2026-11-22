@@ -60,3 +60,25 @@ test('modèles de départ du mode scolaire : créés une seule fois', async () =
   for (const x of l) await api('DELETE', `/api/pages/${x.id}`);
   assert.deepEqual((await api('GET', `/api/pages/${db.id}/templates`)).body, []);
 });
+
+test('valeurs par défaut : nouvelle ligne, modèle prioritaire, valeurs périmées ignorées', async () => {
+  const db = (await api('POST', '/api/pages', { kind: 'database', title: 'Taches' })).body;
+  const sel = (n) => ({ type: 'select', select: { name: n, color: 'blue' } });
+  await api('PATCH', `/api/pages/${db.id}`, {
+    schema: { Name: { id: 'title', name: 'Name', type: 'title', title: {} }, Statut: { id: 's', name: 'Statut', type: 'select', select: { options: [{ name: 'A faire', color: 'gray' }, { name: 'Fini', color: 'green' }] } }, Prio: { id: 'p', name: 'Prio', type: 'select', select: { options: [{ name: 'Haute', color: 'red' }] } } },
+    props: { dw_defaults: { Statut: sel('A faire'), Prio: sel('Haute'), Disparue: sel('X'), Name: { type: 'title', title: [] } } },
+  });
+  const r1 = (await api('POST', '/api/pages', { parent_id: db.id, title: 'T1' })).body;
+  assert.equal(r1.props.Statut.select.name, 'A faire');
+  assert.equal(r1.props.Prio.select.name, 'Haute');
+  assert.ok(!('Disparue' in r1.props) && !('Name' in r1.props)); // propriété supprimée / titre : ignorées
+  // un modèle qui définit Statut garde sa valeur ; Prio vient du défaut
+  const t = (await api('POST', `/api/pages/${db.id}/templates`, { title: 'Modele' })).body;
+  await api('PATCH', `/api/pages/${t.id}`, { props: { Statut: sel('Fini') } });
+  const r2 = (await api('POST', `/api/pages/${db.id}/from-template/${t.id}`, { today: '2026-11-22' })).body;
+  assert.equal(r2.props.Statut.select.name, 'Fini');
+  assert.equal(r2.props.Prio.select.name, 'Haute');
+  // un type devenu différent n'est plus appliqué
+  await api('PATCH', `/api/pages/${db.id}`, { props: { dw_defaults: { Statut: { type: 'number', number: 3 } } } });
+  assert.ok(!('Statut' in (await api('POST', '/api/pages', { parent_id: db.id, title: 'T3' })).body.props));
+});
