@@ -780,3 +780,25 @@ a.atom-page .vicon, .atom-page .vicon { margin-left: 1px; }
 h1.title .atom { font-size: inherit; display: inline; white-space: normal; }
 .lock-chip { display: inline-flex; align-items: center; gap: 5px; margin: 4px 0 0; padding: 2px 9px; font-size: .78rem; color: var(--muted); background: var(--hover); border: 0; border-radius: 999px; cursor: pointer; }
 .lock-chip:hover { color: var(--fg); }
+
+/* ===== Export PDF (impression) : mise en page « papier » ===== */
+#print-root { display: none; }
+.pr-dlg .pr-chk { display: flex; gap: 6px; align-items: flex-start; margin: 6px 0; font-size: .92rem; } .pr-dlg .pr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 8px; } .pr-dlg .pr-info { margin: 0 0 6px 22px; }
+@media print {
+  html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+  body > *:not(#print-root) { display: none !important; }
+  #print-root { display: block; color: #1b1b1b; background: #fff; font-family: Georgia, 'Times New Roman', serif; font-size: var(--pr-size, 11pt); line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #print-root * { box-shadow: none !important; }
+  #print-root .pr-next { break-before: page; }
+  #print-root .pr-title { font: 700 1.9em/1.2 Georgia, 'Times New Roman', serif; margin: 0 0 .7em; padding-bottom: .3em; border-bottom: 1.5pt solid #222; break-after: avoid; }
+  #print-root .editor { display: block; padding: 0; margin: 0; width: auto; max-width: none; }
+  #print-root .editor .row { break-inside: avoid; }
+  #print-root .t-heading_1, #print-root .t-heading_2, #print-root .t-heading_3, #print-root .t-heading_4 { break-after: avoid; }
+  #print-root .t-heading_1 { margin-top: 1.4em; } #print-root .t-heading_2 { margin-top: 1.1em; } #print-root .t-heading_3 { margin-top: .9em; }
+  #print-root .t-callout, #print-root .t-quote, #print-root .t-code, #print-root .t-image, #print-root .t-table, #print-root tr, #print-root img, #print-root pre { break-inside: avoid; }
+  #print-root img { max-width: 100%; height: auto; }
+  #print-root .handle, #print-root .add-line, #print-root .caret, #print-root .nbtn-wrap, #print-root .school-files-block, #print-root .cmt-dot, #print-root .block-comment { display: none !important; }
+  #print-root a, #print-root a.atom-page { color: inherit !important; text-decoration: none; }
+  #print-root .atom-date, #print-root a.atom-page, #print-root .atom-user { color: #555 !important; }
+  #print-root table { border-collapse: collapse; width: 100%; } #print-root td, #print-root th { border: .5pt solid #999; padding: 3pt 5pt; }
+}

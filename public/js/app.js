@@ -951,6 +951,10 @@ function pageMenu(anchor, page, role, editable) {
       try { const r = await api.post(`/api/pages/${page.id}/arch-reference`); toast(`Architecture de référence enregistrée (${r.kept} blocs de structure)`); } catch (e) { toast(e.message, 'error'); }
     } });
   }
+  if (page.kind === 'page' && !S.token) items.push({ label: 'Exporter en PDF…', icon: 'download', fn: async () => {
+    const subs = [...(S.pageMap?.values() || [])].filter((x) => x.parent_id === page.id && x.kind === 'page' && !x.archived && !x.locked).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((x) => ({ id: x.id, title: x.title }));
+    (await import('./pdfexport.js')).exportPdfDialog(page, { pageInfo, subpages: subs, school: !!S.pageMap?.get(page.parent_id) && S.pageMap.get(page.parent_id).kind === 'database' });
+  } });
   if (editable) {
     items.push({ label: 'Dupliquer', icon: 'copy', fn: () => duplicatePage(page) });
     items.push({ label: 'Déplacer vers…', icon: 'arrow-right', fn: () => movePageDialog(page) });

@@ -117,7 +117,7 @@ function caretOnEdge(el, dir) {
   return dir < 0 ? rect.top - box.top < lh * 0.8 : box.bottom - rect.bottom < lh * 0.8;
 }
 
-export function createEditor(host, { blocks, editable, hooks }) {
+export function createEditor(host, { blocks, editable, hooks, openAll = false }) {
   let tree = buildTree(blocks);
   const opened = new Set();
   let index = new Map();
@@ -277,7 +277,7 @@ export function createEditor(host, { blocks, editable, hooks }) {
     if (editable) row.append(h('span', { class: 'add-line', title: 'Ajouter une ligne au-dessus (Alt + clic : en dessous)', contenteditable: 'false', 'aria-hidden': 'true' }),
       h('span', { class: 'handle', draggable: 'true', title: 'Glisser pour déplacer', contenteditable: 'false', 'aria-hidden': 'true' }));
     const isTog = node.type === 'toggle' || (node.type.startsWith('heading_') && c.is_toggleable);
-    const open = opened.has(node.id);
+    const open = openAll || opened.has(node.id);
     let body = null;
     const lead = (x) => row.append(typeof x === 'string' ? h('span', { class: 'lead glyph', 'data-g': x, contenteditable: 'false', 'aria-hidden': 'true' }) : h('span', { class: 'lead', contenteditable: 'false' }, x));
     switch (node.type) {
