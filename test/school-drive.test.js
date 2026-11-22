@@ -99,7 +99,7 @@ test('nouveau chapitre : dossier Année / Matière / Support créé sur Drive, s
 
 test('ajout de fichier : jeton temporaire, vérification auprès de Drive, addendum dans « Addenda »', async () => {
   const s = (await api('POST', `/api/school/pages/${ctx.s1}/upload-session`)).body;
-  assert.equal(s.token, 'tok'); assert.equal(s.folder_id, ctx.f1);
+  assert.equal(s.token, 'tok'); assert.equal(pathOf(s.folder_id), 'DeepWell Cours / Recueil 5A6 (2026-2027) / Français / P.S.A. #0001-FR / Document principal'); assert.notEqual(s.folder_id, ctx.f1);
   const fid = addF({ name: 'cours.pdf', mimeType: 'application/pdf', parents: [s.folder_id], size: '1234' });
   const reg = await api('POST', `/api/school/pages/${ctx.s1}/files`, { drive_id: fid });
   assert.equal(reg.status, 200); assert.equal(reg.body.name, 'cours.pdf'); assert.equal(reg.body.size, 1234);
@@ -178,7 +178,7 @@ test('rattacher les cours existants : aperçu sans effet, puis dossiers, fichier
   const files = DB.db.prepare('SELECT * FROM school_files WHERE page_id=?').all(row.id);
   assert.deepEqual(files.map((f) => f.kind).sort(), ['link', 'upload']);
   const sent = files.find((f) => f.kind === 'upload');
-  assert.equal(pathOf(sent.drive_id), 'DeepWell Cours / Recueil 5A6 (2026-2027) / Géographie / Cours existant / ancien.txt');
+  assert.equal(pathOf(sent.drive_id), 'DeepWell Cours / Recueil 5A6 (2026-2027) / Géographie / Cours existant / Document principal / ancien.txt');
   assert.equal(files.find((f) => f.kind === 'link').drive_id, '1AbCdEfGhIjKlMnOpQr', 'le lien Drive existant est rattaché tel quel, pas déplacé');
   assert.ok(fs.existsSync(path.join(DB.UPLOAD_DIR, up.body.id)), 'la copie du serveur est conservée');
   // rejouable sans doublon

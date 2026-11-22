@@ -1,7 +1,7 @@
 /**
  * Mode scolaire × Google Drive (étape 2).
  * - Un « support » (ligne d'une base scolaire) = un dossier Drive : DeepWell Cours / <Année = titre de la base> / <Matière> / <Support>,
- *   avec un sous-dossier « Addenda » pour les fichiers des sous-pages.
+ *   avec deux sous-dossiers, créés au premier envoi : « Document principal » (fichiers de la page du chapitre) et « Addenda » (fichiers des sous-pages).
  * - Les fichiers vont directement du navigateur vers Drive (jeton temporaire) ; le serveur ne garde que les informations
  *   (identifiant Drive, nom, type, taille, date).
  * - Renommage / changement de matière / suppression définitive d'un support sont répercutés sur Drive (sens unique ; Drive ne reçoit
@@ -112,13 +112,22 @@ export async function ensureSupportFolder(userId, ctx, token) {
   return db.prepare('SELECT * FROM school_folders WHERE page_id=?').get(ctx.support.id);
 }
 
+if (!db.prepare('PRAGMA table_info(school_folders)').all().some((c) => c.name === 'main_id')) db.exec('ALTER TABLE school_folders ADD COLUMN main_id TEXT');
+/** Sous-dossier « Document principal » : les fichiers de la page du chapitre elle-même (créé au premier envoi). */
+async function ensureMain(token, row) {
+  if (row.main_id) return row.main_id;
+  const id = await createFolder(token, 'Document principal', row.drive_id);
+  db.prepare('UPDATE school_folders SET main_id=? WHERE page_id=?').run(id, row.page_id);
+  row.main_id = id;
+  return id;
+}
 async function ensureAddenda(token, row) {
   if (row.addenda_id) return row.addenda_id;
   const id = await createFolder(token, 'Addenda', row.drive_id);
   db.prepare('UPDATE school_folders SET addenda_id=? WHERE page_id=?').run(id, row.page_id);
   return id;
 }
-const targetFolder = async (token, ctx, row) => (ctx.isAddendum ? ensureAddenda(token, row) : row.drive_id);
+const targetFolder = async (token, ctx, row) => (ctx.isAddendum ? ensureAddenda(token, row) : ensureMain(token, row));
 
 // ---------- liens Drive / Canva / fichiers du serveur présents dans les pages ----------
 const DRIVE_RE = /https?:\/\/(?:drive|docs)\.google\.com\/[^\s"'<>\\)\]]+/g;

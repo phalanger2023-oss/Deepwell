@@ -6,6 +6,14 @@
  */
 export const RELEASES = [
   {
+    version: '3.4.6', date: '2026-11-22',
+    nouveautes: [],
+    ameliorations: [
+      'Google Drive (mode scolaire) : les fichiers de la page d’un chapitre vont maintenant dans un sous-dossier « Document principal » (créé au premier envoi), à côté du sous-dossier « Addenda » : année / matière / chapitre / Document principal ou Addenda. Les fichiers déjà envoyés restent où ils sont ; rien n’est déplacé sur Drive.',
+    ],
+    corrections: [],
+  },
+  {
     version: '3.4.5', date: '2026-11-22',
     nouveautes: [
       'Boutons → action « Créer une sous-page » : on peut maintenant choisir une page modèle existante dont tout le contenu (mise en forme, encadrés, séparateurs, boutons…) est copié dans la sous-page ; « @Today » dans le modèle devient la date du jour. Le contenu écrit à la main gagne aussi un encadré (ligne commençant par « !> ») et la vraie date du jour (« @Today »), et un bouton « ＋ En-tête d’addendum » met la date du jour dans un encadré entre deux séparateurs.',
