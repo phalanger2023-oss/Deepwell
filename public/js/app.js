@@ -526,7 +526,12 @@ async function showPage(id) {
       propEditor(sch[k], page.props?.[k], editable, async (np) => { page.props = { ...page.props, [k]: np }; try { await api.patch(`/api/pages/${page.id}`, { props: page.props }); } catch (e) { toast(e.message, 'error'); } }, async () => { await api.patch(`/api/pages/${data.crumbs.at(-1)?.id}`, { schema: sch }); }))));
     parts[1].append(box);
   }
-  if (!S.token && S.me && page.kind !== 'database' && hasDbAncestor(page)) {
+  if (page.kind === 'template') {
+    const dbc = crumbs[crumbs.length - 1];
+    parts[1].append(h('div', { class: 'banner tpl-banner' }, vi('file-text', 16), h('span', {}, ' Modèle de la base ', h('b', {}, dbc?.title || ''), '. Chaque nouvelle ligne créée depuis ce modèle reprend ses propriétés et son contenu. ',
+      dbc ? h('a', { href: `#/page/${dbc.id}` }, 'Retour à la base') : null)));
+  }
+  if (!S.token && S.me && page.kind !== 'database' && page.kind !== 'template' && hasDbAncestor(page)) {
     const schoolHost = h('div', { class: 'school-files-host' });
     parts[1].append(schoolHost);
     import('./school-files.js').then((m) => m.mountSchoolFiles(schoolHost, page)).catch(() => {}); // chargé à la demande, seulement pour les pages d'une base

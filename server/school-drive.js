@@ -67,7 +67,7 @@ export function schoolContext(pageId) {
   let id = pageId;
   for (let i = 0; i < 6 && id; i++) {
     const p = db.prepare('SELECT id,parent_id,kind,title,props FROM pages WHERE id=?').get(id);
-    if (!p) return null;
+    if (!p || p.kind === 'template') return null; // un modèle n'est pas un chapitre : pas de dossier Drive
     const par = p.parent_id && db.prepare('SELECT id,kind,title,props,schema FROM pages WHERE id=?').get(p.parent_id);
     if (par?.kind === 'database') {
       const cfg = parse(par.props, {})?.dw_school;
@@ -130,7 +130,7 @@ export function parseDriveUrl(url) {
   const f = /\/d\/([\w-]{10,})/.exec(url) || /[?&]id=([\w-]{10,})/.exec(url);
   return f ? { id: f[1], folder: false } : null;
 }
-const descendants = (pageId) => db.prepare(`WITH RECURSIVE d(id,depth) AS (SELECT ?1,0 UNION ALL SELECT p.id,d.depth+1 FROM pages p JOIN d ON p.parent_id=d.id WHERE p.archived=0 AND d.depth<8)
+const descendants = (pageId) => db.prepare(`WITH RECURSIVE d(id,depth) AS (SELECT ?1,0 UNION ALL SELECT p.id,d.depth+1 FROM pages p JOIN d ON p.parent_id=d.id WHERE p.archived=0 AND p.kind != 'template' AND d.depth<8)
   SELECT id FROM d`).all(pageId).map((r) => r.id);
 
 /** Ce qu'une page contient déjà : liens Drive (fichiers / dossiers), liens Canva, fichiers stockés sur le serveur. */
@@ -314,7 +314,7 @@ function importPlan(req, databaseId) {
   if (!dbp || dbp.kind !== 'database' || !can(role, 'edit')) throw err('Base introuvable', 404);
   const cfg = parse(dbp.props, {})?.dw_school;
   if (!cfg?.enabled || cfg.options?.drive !== true) throw err('Activez d’abord le Mode scolaire et le stockage Drive dans les réglages de la base.', 409);
-  const rows = db.prepare("SELECT id,title,props FROM pages WHERE parent_id=? AND archived=0 ORDER BY position").all(databaseId);
+  const rows = db.prepare("SELECT id,title,props FROM pages WHERE parent_id=? AND archived=0 AND kind != 'template' ORDER BY position").all(databaseId);
   const year = cleanName(dbp.title, 'Sans titre');
   const supports = rows.map((r) => {
     let drive = 0, folders = 0, canva = 0, server = 0, tooBig = 0, addenda = 0;

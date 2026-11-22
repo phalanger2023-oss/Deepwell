@@ -734,3 +734,9 @@ body.is-peek .cover + .page .page-icon { margin-top: -97px; }
 /* 3.4.2 : page cachée */
 .o5-bar { display: inline-block; background: var(--fg); border-radius: 2px; height: 1em; vertical-align: -2px; user-select: none; }
 .redacted-line { margin-top: 6px; }
+
+/* 3.4.1 : modèles de base de données */
+.btn-split { display: inline-flex; } .btn-split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.btn-split-arrow { border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important; border-left: 1px solid rgba(255,255,255,.4) !important; padding: 2px 6px !important; }
+.tpl-list { display: grid; gap: 6px; margin-bottom: 12px; } .tpl-row { display: flex; align-items: center; gap: 6px; } .tpl-name { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-banner { display: flex; gap: 6px; align-items: center; }

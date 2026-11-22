@@ -90,6 +90,18 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
       if (view().type === 'table') { draw(); host.querySelector('tbody tr:last-child .title-cell input')?.focus(); } else open(r);
     } catch (e) { toast(e.message, 'error'); }
   };
+  // Nouvelle ligne depuis un modèle (propriétés + contenu copiés, mentions « @Today » remplacées par la date du jour)
+  async function createFromTemplate(t) {
+    const created = await api.post(`/api/pages/${page.id}/from-template/${t.id}`, { today: todayIso() });
+    const row = { id: created.id, title: created.title || '', icon: created.icon, cover: null, props: created.props || {} };
+    rows.push(row); onChange?.();
+    if (schoolDrive()) {
+      try { const f = await api.post(`/api/school/pages/${row.id}/folder`); if (f?.pending) toast('Chapitre créé. Google ne répond pas : le dossier Drive sera créé automatiquement dès que possible.'); }
+      catch (e) { toast(e.message, 'error'); }
+    }
+    draw(); open(row);
+  }
+  const openTemplates = async (anchor) => { try { (await import('./templates.js')).openTemplateMenu(anchor, { page, onPick: (t) => createFromTemplate(t).catch((e) => toast(e.message, 'error')) }); } catch (e) { toast(e.message, 'error'); } };
   const openSchoolSettings = async () => { try { (await import('./school.js')).openDatabaseSettings(page, { onSaved: () => draw() }); } catch (e) { toast(e.message, 'error'); } };
   const open = (r, forceFull) => { if (forceFull || fullDefault()) location.hash = `#/page/${r.id}`; else peekRow(r, onChange); };
   host.addEventListener('click', (e) => {
@@ -115,9 +127,11 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     const tools = h('div', { class: 'dbv-tools' }, h('input', { class: 'input dbv-filter', placeholder: 'Filtrer…', value: filter, oninput: (e) => { filter = e.target.value; clearTimeout(draw.t); draw.t = setTimeout(() => drawBody(), 120); } }), ...toolControls(v),
       editable && schoolDrive() ? h('button', { class: 'btn small', title: 'Crée la page du chapitre et son dossier sur Google Drive', onclick: newChapter }, vi('folder', 14), 'Nouveau chapitre') : null,
       editable ? h('button', { class: 'btn small', title: 'Réglages de la base', onclick: openSchoolSettings }, vi('settings', 14), 'Réglages', schoolOn() ? h('span', { class: 'rel-tag' }, 'Scolaire') : null) : null,
-      editable ? h('button', { class: 'btn primary small', onclick: async () => {
-        try { const r = await createRow('', {}); if (v.type === 'table') { draw(); host.querySelector('tbody tr:last-child .title-cell input')?.focus(); } else open(r); } catch (e) { toast(e.message, 'error'); }
-      } }, vi('plus', 14), 'Nouvelle ligne') : null);
+      editable ? h('span', { class: 'btn-split' },
+        h('button', { class: 'btn primary small', onclick: async () => {
+          try { const r = await createRow('', {}); if (v.type === 'table') { draw(); host.querySelector('tbody tr:last-child .title-cell input')?.focus(); } else open(r); } catch (e) { toast(e.message, 'error'); }
+        } }, vi('plus', 14), 'Nouvelle ligne'),
+        h('button', { class: 'btn primary small btn-split-arrow', title: 'Nouvelle ligne depuis un modèle', 'aria-label': 'Choisir un modèle', onclick: (e) => openTemplates(e.currentTarget) }, vi('chevron-down', 14))) : null);
     host.replaceChildren(tabs, tools, body);
     drawBody();
   }

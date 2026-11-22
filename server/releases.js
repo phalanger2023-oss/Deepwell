@@ -7,7 +7,10 @@
 export const RELEASES = [
   {
     version: '3.4.1', date: '2026-11-22',
-    nouveautes: [],
+    nouveautes: [
+      'Modèles de base de données : une petite flèche à côté de « Nouvelle ligne » ouvre la liste des modèles. Un clic sur un modèle crée une nouvelle ligne avec ses propriétés déjà remplies et son contenu prêt à annoter ; la date du jour remplace automatiquement « @Today ». On peut créer ses propres modèles, les modifier comme une page normale (la bannière en haut rappelle qu’on est dans un modèle), les dupliquer ou les supprimer depuis « Gérer les modèles ». Les modèles n’apparaissent ni dans le tableau, ni dans le Kanban, ni dans la recherche, et ne créent pas de dossier Drive.',
+      'Mode scolaire : trois modèles de départ sont proposés une seule fois — « P.S.A. #00-26- » (Cours, Original, Modifié, Addenda avec « Émanant du P.S.A. » et « Lié à la P.S.A. »), « Fiche de révision » et « Exercices ». Ils se modifient et se suppriment librement, et ne reviennent pas une fois supprimés.',
+    ],
     ameliorations: [
       'Kanban : la vue tient maintenant dans l’écran. Chaque colonne a sa propre barre de défilement verticale, et la barre de défilement horizontale reste toujours visible en bas au lieu de se perdre sous la page.',
       'Kanban : deux flèches (gauche et droite) apparaissent sur les côtés pour passer d’un groupe de colonnes à l’autre. On peut aussi faire défiler avec la molette de la souris au-dessus du fond ou de l’en-tête d’une colonne, ou « attraper » le fond du tableau avec la souris pour le faire glisser.',

@@ -11,6 +11,7 @@ import { accessFor, can, isDescendant } from './access.js';
 import { lockRouter, lockGuard, lockedIds, lockFor } from './locks.js';
 import { cleanProps } from './school.js';
 import { schoolPageChanged, schoolPagesDeleting } from './school-drive.js';
+import { templatesRoutes } from './templates.js';
 
 export const pagesRouter = express.Router();
 pagesRouter.use(lockRouter);          // /:id/lock… (statut, déverrouillage, gestion)
@@ -52,12 +53,12 @@ pagesRouter.delete('/favorites/:pid', requireAuth, (req, res) => {
 
 pagesRouter.get('/tree', requireAuth, (req, res) => {
   const cols = 'id,parent_id,kind,title,icon,position,archived,owner_id,(notion_id IS NOT NULL) AS imported, EXISTS(SELECT 1 FROM page_locks l WHERE l.page_id=pages.id) AS locked';
-  const mine = db.prepare(`SELECT ${cols} FROM pages WHERE owner_id=? ORDER BY position, created_at`).all(req.user.id);
+  const mine = db.prepare(`SELECT ${cols} FROM pages WHERE owner_id=? AND kind != 'template' ORDER BY position, created_at`).all(req.user.id);
   const roots = db.prepare('SELECT page_id FROM shares WHERE user_id=?').all(req.user.id).map((r) => r.page_id);
   const shared = db.prepare(`WITH RECURSIVE d(id) AS (
       SELECT page_id FROM shares WHERE user_id=?1
       UNION SELECT p.id FROM pages p JOIN d ON p.parent_id=d.id)
-    SELECT ${cols} FROM pages WHERE id IN (SELECT id FROM d) AND owner_id != ?1 ORDER BY position`).all(req.user.id);
+    SELECT ${cols} FROM pages WHERE id IN (SELECT id FROM d) AND owner_id != ?1 AND kind != 'template' ORDER BY position`).all(req.user.id);
   res.json({ pages: mine, shared, sharedRoots: roots });
 });
 
@@ -73,12 +74,12 @@ pagesRouter.get('/search', requireAuth, (req, res) => {
       UNION SELECT p.id FROM pages p JOIN acc ON p.parent_id=acc.id)`;
   const prefix = `${likes[0].slice(1)}`; // « mot% » : les titres qui commencent par le mot passent en premier
   const byTitle = db.prepare(`${acc} SELECT p.id,p.title,p.icon,p.kind,par.title AS parent_title FROM pages p
-    LEFT JOIN pages par ON par.id=p.parent_id WHERE p.id IN (SELECT id FROM acc) AND p.archived=0 AND ${cond('p.title')}
+    LEFT JOIN pages par ON par.id=p.parent_id WHERE p.id IN (SELECT id FROM acc) AND p.archived=0 AND p.kind != 'template' AND ${cond('p.title')}
     ORDER BY CASE WHEN norm(p.title) LIKE ?${words.length + 2} ESCAPE '\\' THEN 0 ELSE 1 END, p.updated_at DESC LIMIT 20`)
     .all(req.user.id, ...likes, prefix);
   const byText = db.prepare(`${acc} SELECT p.id,p.title,p.icon,p.kind,par.title AS parent_title,substr(b.text,1,1000) AS snippet
     FROM blocks b JOIN pages p ON p.id=b.page_id LEFT JOIN pages par ON par.id=p.parent_id
-    WHERE p.id IN (SELECT id FROM acc) AND p.archived=0 AND ${cond('b.text')} LIMIT 60`).all(req.user.id, ...likes);
+    WHERE p.id IN (SELECT id FROM acc) AND p.archived=0 AND p.kind != 'template' AND ${cond('b.text')} LIMIT 60`).all(req.user.id, ...likes);
   const hidden = lockedIds([...new Set(byText.map((r) => r.id))]); // le contenu d'une page verrouillée n'apparaît pas dans la recherche
   const seen = new Set(byTitle.map((p) => p.id)), out = [...byTitle];
   for (const r of byText) {
@@ -128,13 +129,15 @@ pagesRouter.post('/', requireAuth, (req, res) => {
   res.json(pageRow(db.prepare('SELECT * FROM pages WHERE id=?').get(id)));
 });
 
+templatesRoutes(pagesRouter, { autoProps, schoolPageChanged });
+
 pagesRouter.get('/:id', (req, res) => {
   const role = accessFor(req.user, req.params.id, token(req));
   if (!role) return res.status(req.user ? 404 : 401).json({ error: 'Page introuvable' });
   const p = db.prepare('SELECT * FROM pages WHERE id=?').get(req.params.id);
   const blocks = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(p.id)
     .map((b) => ({ ...b, content: parse(b.content, {}) }));
-  const children = db.prepare('SELECT id,kind,title,icon,cover,props,position FROM pages WHERE parent_id=? AND archived=0 ORDER BY position')
+  const children = db.prepare('SELECT id,kind,title,icon,cover,props,position FROM pages WHERE parent_id=? AND archived=0 AND kind != \'template\' ORDER BY position')
     .all(p.id).map((c) => ({ ...c, props: p.kind === 'database' ? parse(c.props, {}) : undefined }));
   const crumbs = []; let cur = p.parent_id, g = 0;
   while (cur && g++ < 50) {
@@ -153,7 +156,7 @@ pagesRouter.get('/:id', (req, res) => {
 pagesRouter.get('/:id/excerpts', (req, res) => {
   const role = accessFor(req.user, req.params.id, token(req));
   if (!role) return res.status(req.user ? 404 : 401).json({ error: 'Page introuvable' });
-  const kids = db.prepare('SELECT id FROM pages WHERE parent_id=? AND archived=0 LIMIT 1000').all(req.params.id).map((r) => r.id);
+  const kids = db.prepare('SELECT id FROM pages WHERE parent_id=? AND archived=0 AND kind != \'template\' LIMIT 1000').all(req.params.id).map((r) => r.id);
   const hidden = lockedIds(kids), out = {};
   const q = db.prepare("SELECT text FROM blocks WHERE page_id=? AND text<>'' ORDER BY position LIMIT 6");
   for (const id of kids) {
@@ -239,7 +242,9 @@ pagesRouter.post('/:id/duplicate', requireAuth, (req, res) => {
 pagesRouter.delete('/:id', requireAuth, (req, res) => {
   const role = accessFor(req.user, req.params.id);
   if (!can(role, 'edit')) return res.status(403).json({ error: 'Droits insuffisants' });
-  if (req.query.permanent === '1') {
+  const isTpl = db.prepare("SELECT 1 FROM pages WHERE id=? AND kind='template'").get(req.params.id);
+  if (isTpl) db.prepare('DELETE FROM pages WHERE id=?').run(req.params.id); // modèle : suppression définitive, sans corbeille
+  else if (req.query.permanent === '1') {
     if (role !== 'owner') return res.status(403).json({ error: 'Seul le propriétaire peut supprimer définitivement' });
     schoolPagesDeleting(req.params.id); // mode scolaire : dossiers Drive concernés → corbeille de Drive (récupérable)
     db.prepare('DELETE FROM pages WHERE id=?').run(req.params.id);
