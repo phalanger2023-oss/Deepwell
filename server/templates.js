@@ -31,7 +31,7 @@ function starters() {
   // 1. Reproduit la fiche « P.S.A. #00-26- » (Cours, Original / Modifié, Addenda : Émanant du P.S.A. / Lié à la P.S.A.)
   const orig = head(2, 'Original : ', { is_toggleable: true }), modif = head(2, 'Modifié :', { is_toggleable: true });
   const e = toggle('Émanant du P.S.A.'), l = toggle('Lié à la P.S.A.');
-  const psa = [dateLine(), div(), head(1, 'Cours : '), orig, para('', orig.id), modif, para('', modif.id), div(), head(1, 'Addenda :'), e, addendumButton(e.id), para('', e.id), l, addendumButton(l.id), para('', l.id)];
+  const psa = [dateLine(), div(), B('school_files'), head(1, 'Cours : '), orig, para('', orig.id), modif, para('', modif.id), div(), head(1, 'Addenda :'), e, addendumButton(e.id), para('', e.id), l, addendumButton(l.id), para('', l.id)];
   // 2. Fiche de révision
   const revision = [dateLine(), div(), head(1, 'À retenir'), para(), head(1, 'Définitions et formules'), para(), head(1, 'Exemples'), para(), head(1, 'Points à revoir'),
     B('to_do', { rich_text: [], checked: false, color: 'default' }), B('to_do', { rich_text: [], checked: false, color: 'default' })];

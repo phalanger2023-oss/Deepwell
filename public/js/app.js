@@ -570,10 +570,16 @@ async function showPage(id) {
         h('button', { class: 'btn small', onclick: () => modernizeDialog(page, () => showPage(page.id)) }, vi('refresh-cw', 14), 'Mettre à jour cette page')));
     }).catch(() => {});
   }
+  let schoolPanel = null;
   if (!S.token && S.me && page.kind !== 'database' && page.kind !== 'template' && (data.parentSchema || crumbs.slice(-5).some((c) => c.kind === 'database'))) {
-    const schoolHost = h('div', { class: 'school-files-host' });
-    parts[1].append(schoolHost);
-    import('./school-files.js').then((m) => m.mountSchoolFiles(schoolHost, page)).catch(() => {}); // chargé à la demande, seulement pour les pages d'une base
+    // Panneau « Fichiers » : un seul élément réutilisé (pas de rechargement à chaque rendu de l'éditeur). Sans bloc « Fichiers du chapitre » dans la page,
+    // il reste en tête ; sinon il s'affiche là où le bloc a été placé (déplaçable comme n'importe quel bloc).
+    schoolPanel = h('div', { class: 'school-files-host' });
+    import('./school-files.js').then((m) => m.mountSchoolFiles(schoolPanel, page)).catch(() => {}); // chargé à la demande, seulement pour les pages d'une base
+    if (!(data.blocks || []).some((b) => b.type === 'school_files')) {
+      parts[1].append(schoolPanel);
+      if (editable) schoolPanel.before(h('div', { class: 'sf-move' }, h('button', { class: 'btn small', title: 'Insère le panneau dans la page : tu peux ensuite le déplacer où tu veux', onclick: () => { S.editor?.insertBlockAt('school_files', Math.min(2, S.editor.getFlat().filter((b) => !b.parent_id).length)); document.querySelector('.sf-move')?.remove(); } }, vi('move', 14), 'Placer dans la page')));
+    }
   }
   parts[1].append(body);
   const topRight = [h('span', { id: 'save-status', class: 'muted small' }, '')];
@@ -601,6 +607,7 @@ async function showPage(id) {
     const host = h('div', {});
     body.append(host);
     S.editor = createEditor(host, { blocks, editable, hooks: {
+      mountSchoolFiles: schoolPanel ? (box) => { box.append(schoolPanel); } : null,
       onChange: () => { S.dirty = true; setStatus('Modifié…'); scheduleSave(); },
       upload: (f) => api.upload(f),
       createSubpage: async () => { const p = await api.post('/api/pages', { parent_id: page.id, title: '' }); refreshTree(); return p; },

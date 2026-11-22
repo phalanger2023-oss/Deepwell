@@ -40,6 +40,7 @@ const BLOCK_DEFAULTS = {
   pdf: () => ({ type: 'external', external: { url: '' }, caption: [] }),
   audio: () => ({ type: 'external', external: { url: '' }, caption: [] }),
   table_of_contents: () => ({ color: 'default' }),
+  school_files: () => ({}),
   button: () => ({ label: 'Bouton', color: 'default', actions: [] }),
   chart: () => ({ chart_type: 'bar', title: '', palette: 'notion', show_legend: true, show_values: false, source: { type: 'manual', labels: ['Janvier', 'Février', 'Mars', 'Avril'], series: [{ name: 'Série 1', values: [12, 19, 8, 15] }] } }),
 };
@@ -50,10 +51,10 @@ const SLASH_ITEMS = [
   ['Toggle', 'toggle', 'liste dépliante toggle'], ['Citation', 'quote', 'citation quote'], ['Cadre', 'callout', 'cadre encadré callout info'], ['Code', 'code', 'code bloc'],
   ['Séparateur', 'divider', 'séparateur divider ligne'], ['Image', 'image', 'image photo'], ['Fichier', 'file', 'fichier pièce jointe'], ['Vidéo', 'video', 'vidéo'], ['PDF', 'pdf', 'pdf'], ['Audio', 'audio', 'audio son'],
   ['Marque-page', 'bookmark', 'lien marque-page bookmark'], ['Intégration', 'embed', 'embed intégrer iframe'], ['Tableau', 'table', 'tableau table'], ['2 colonnes', 'column_list2', 'colonnes'], ['3 colonnes', 'column_list3', 'colonnes'],
-  ['Équation', 'equation', 'équation maths'], ['Table des matières', 'table_of_contents', 'sommaire table des matières'], ['Sous-page', 'child_page', 'page sous-page'], ['Google Drive', 'drive_file', 'google drive fichier'],
+  ['Équation', 'equation', 'équation maths'], ['Table des matières', 'table_of_contents', 'sommaire table des matières'], ['Fichiers du chapitre', 'school_files', 'fichiers chapitre drive pièces jointes scolaire'], ['Sous-page', 'child_page', 'page sous-page'], ['Google Drive', 'drive_file', 'google drive fichier'],
   ['Bouton', 'button', 'bouton button action automatisation routine'], ['Graphique', 'chart', 'graphique chart diagramme statistiques'], ['Graphique en courbe', 'chart:line', 'graphique courbe ligne'], ['Graphique en anneau', 'chart:donut', 'graphique anneau camembert pie'],
 ];
-const SLASH_ICONS = { paragraph: 'T', heading_1: 'H1', heading_2: 'H2', heading_3: 'H3', bulleted_list_item: '•', numbered_list_item: '1.', to_do: '☑', toggle: '▸', quote: '❝', callout: '💡', code: '</>', divider: '—', image: '🖼', file: '📎', video: '🎬', pdf: '📄', audio: '🎵', bookmark: '🔖', embed: '🌐', table: '▦', column_list2: '▥', column_list3: '▥', equation: '∑', table_of_contents: '☰', child_page: '📄', drive_file: '△', button: '▶', chart: '📊', 'chart:line': '📈', 'chart:donut': '◔' };
+const SLASH_ICONS = { school_files: '📎', paragraph: 'T', heading_1: 'H1', heading_2: 'H2', heading_3: 'H3', bulleted_list_item: '•', numbered_list_item: '1.', to_do: '☑', toggle: '▸', quote: '❝', callout: '💡', code: '</>', divider: '—', image: '🖼', file: '📎', video: '🎬', pdf: '📄', audio: '🎵', bookmark: '🔖', embed: '🌐', table: '▦', column_list2: '▥', column_list3: '▥', equation: '∑', table_of_contents: '☰', child_page: '📄', drive_file: '△', button: '▶', chart: '📊', 'chart:line': '📈', 'chart:donut': '◔' };
 
 const SHORTCUTS = [
   [/^#{1}\s$/, 'heading_1'], [/^#{2}\s$/, 'heading_2'], [/^#{3}\s$/, 'heading_3'], [/^[-*+]\s$/, 'bulleted_list_item'],
@@ -327,6 +328,7 @@ export function createEditor(host, { blocks, editable, hooks }) {
       }
       case 'drive_file': row.append(h('a', { class: 'drive-card', href: safeUrl(c.url), target: '_blank', rel: 'noopener noreferrer', contenteditable: 'false' },
         c.iconLink && safeUrl(c.iconLink) ? h('img', { src: safeUrl(c.iconLink), alt: '' }) : '△', h('span', {}, c.name || 'Fichier Google Drive'), h('small', {}, 'Google Drive'))); break;
+      case 'school_files': { const box = h('div', { class: 'school-files-block', contenteditable: 'false' }); row.append(box); if (hooks.mountSchoolFiles) hooks.mountSchoolFiles(box); else box.append(h('div', { class: 'muted small' }, 'Fichiers du chapitre (visibles dans une base scolaire)')); break; }
       case 'table_of_contents': row.append(h('div', { class: 'toc', dataset: { toc: '1' } })); break;
       case 'synced_block': row.append(h('div', { class: 'synced', contenteditable: 'false' }, c.synced_from ? '🔗 Bloc synchronisé (copie)' : '🔗 Bloc synchronisé')); break;
       default: row.append(h('div', { class: 'unsupported', contenteditable: 'false', title: 'Conservé tel quel dans la base' }, `Bloc « ${node.type} » non éditable ici (conservé)`));
@@ -551,7 +553,7 @@ export function createEditor(host, { blocks, editable, hooks }) {
   let mentionSeq = 0;
   function openSlash(el, node, q) {
     const nq = norm(q);
-    const items = SLASH_ITEMS.filter(([label, , kw]) => !nq || norm(label).includes(nq) || norm(kw).includes(nq))
+    const items = SLASH_ITEMS.filter(([, type]) => type !== 'school_files' || hooks.mountSchoolFiles).filter(([label, , kw]) => !nq || norm(label).includes(nq) || norm(kw).includes(nq))
       .map(([label, type]) => ({ icon: SLASH_ICONS[type] || '+', label, run: () => applySlash(type) }));
     if (!items.length) return closeSlash();
     slash = { kind: 'slash', el, node, q, items, sel: Math.min(slash?.sel ?? 0, items.length - 1) };
@@ -873,6 +875,13 @@ export function createEditor(host, { blocks, editable, hooks }) {
       e.preventDefault(); // la fusion native de deux <div> casserait le modèle : on gère toujours le début de bloc nous-mêmes
       if (node.type !== 'paragraph') { e.preventDefault(); convert(node, 'paragraph'); render({ id: node.id, offset: 0 }); changed(); return; }
       const all = flatText(), k = all.indexOf(el), prevEl = all[k - 1];
+      if (!rtPlain(node.content.rich_text)) { // bloc de texte vide : retour arrière = suppression (même juste après un séparateur ou un bloc non textuel)
+        const tgt = nodeOf(prevEl || all[k + 1]), mine0 = info(node.id);
+        if (!tgt && !node.children.length && mine0.arr.length <= 1 && !mine0.parent) return; // dernier bloc de la page : on le garde
+        mine0.arr.splice(mine0.i, 1, ...node.children);
+        if (!tgt && !mine0.arr.length) mine0.arr.push(newBlock('paragraph'));
+        render(tgt ? { id: tgt.id, offset: prevEl ? 'end' : 'start' } : { id: mine0.arr[0].id }); changed(); return;
+      }
       if (!prevEl) return;
       e.preventDefault();
       const pn = nodeOf(prevEl), mine = info(node.id);
@@ -1242,6 +1251,7 @@ export function createEditor(host, { blocks, editable, hooks }) {
     setCommentMarks: (list) => { commentMarks = (list || []).filter((c) => c.quote && c.anchor != null && c.block_id); paintMarks(); },
     setComments: (counts) => { commentCounts = counts || {}; rendering = true; decorateComments(); mo.takeRecords(); rendering = false; },
     scrollToBlock: (id) => { const el = blockEl(id); if (!el) return false; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); return true; },
+    insertBlockAt: (type, at = 0) => { if (!editable) return; const nb = newBlock(type, BLOCK_DEFAULTS[type]?.() || {}); tree.splice(Math.min(at, tree.length), 0, nb); render(); changed(); },
     focusFirst: () => { const f = tree[0]; if (f && editable) focusBlock(f.id, 'end'); },
     destroy: () => { selBar.remove(); document.removeEventListener('mousedown', onBandDown); document.removeEventListener('mousedown', onLeadDown, true); document.removeEventListener('keydown', onSelKey, true); document.querySelectorAll('.rubber,.sel-pop').forEach((x) => x.remove()); pop.remove(); document.removeEventListener('mousedown', onDocDown); mo.disconnect(); clearTimeout(syncTimer); document.removeEventListener('selectionchange', onSel); menu.remove(); bar.remove(); host.replaceChildren(); },
   };

@@ -756,3 +756,5 @@ body.is-peek .cover + .page .page-icon { margin-top: -97px; }
 .arch-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: var(--radius); cursor: pointer; } .arch-row:hover { background: var(--hover); }
 
 .arch-dot { display: inline-block; flex: none; width: 9px; height: 9px; margin-left: 6px; border-radius: 50%; background: #f5c542; box-shadow: 0 0 0 2px color-mix(in srgb, #f5c542 30%, transparent); vertical-align: middle; }
+.sf-move { display: flex; justify-content: flex-end; margin: 0 0 4px; }
+.school-files-block { margin: 6px 0; }

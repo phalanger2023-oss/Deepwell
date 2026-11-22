@@ -10,11 +10,14 @@ export const RELEASES = [
     nouveautes: [
       'Anciennes pages du recueil (créées avant le 22/11/2026) : pastille jaune « À mettre à jour » + bouton « Mettre à jour cette page ». Une fenêtre liste les blocs de la page (l’ancienne structure « Original / Modifié » est déjà cochée), tu valides, et le bouton « Nouvel addendum » est ajouté si besoin. Une version de secours est gardée dans l’historique. Après la mise à jour, la pastille et le bouton disparaissent. Les pages récentes ne les ont jamais.',
       'Mode développeur : clic droit sur la pastille → « Marquer comme modifiée » (retire pastille et bouton sans toucher à la page).',
+      'Bloc « Fichiers du chapitre » : le panneau d’ajout de fichiers est maintenant un bloc déplaçable où tu veux dans la page (menu « / » → « Fichiers du chapitre »). Sur les pages existantes, le bouton « Placer dans la page » l’insère ; les nouvelles fiches P.S.A. l’ont d’office sous la ligne de date.',
       'La pastille jaune apparaît aussi directement dans les vues de la base scolaire (tableau, Kanban, galerie, liste, calendrier), sur chaque ancienne page.',
       'Icône de l’onglet du navigateur : celle de la page affichée ; sans icône de page, l’icône du site choisie dans Réglages → Apparence ; sinon l’icône par défaut.',
     ],
     ameliorations: [],
-    corrections: [],
+    corrections: [
+      'Retour arrière dans un bloc de texte vide : le bloc est supprimé, y compris juste après un séparateur ou un bloc non textuel.',
+    ],
   },
   {
     version: '3.4.10', date: '2026-11-22',
