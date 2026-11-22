@@ -85,25 +85,29 @@ test('valeurs par défaut : nouvelle ligne, modèle prioritaire, valeurs périm�
 
 test('boutons « Nouvel addendum » : aperçu, ajout dans les blocs déroulants, pages déjà équipées ou sans section laissées', async () => {
   const db = (await api('POST', '/api/pages', { kind: 'database', title: 'Scolaire2' })).body;
-  await api('PATCH', `/api/pages/${db.id}`, { props: { dw_school: { enabled: true, options: {} } } });
+  await api('PATCH', `/api/pages/${db.id}`, { props: { dw_school: { enabled: true, options: {} } }, schema: { Name: { id: 'title', name: 'Name', type: 'title', title: {} }, 'Matière': { id: 'm', name: 'Matière', type: 'select', select: { options: [{ name: 'Français', color: 'blue' }] } } } });
   const tpls = (await api('GET', `/api/pages/${db.id}/templates`)).body, psa = tpls.find((x) => x.title.startsWith('P.S.A.'));
   const tx = (text, extra = {}) => ({ rich_text: [{ type: 'text', text: { content: text, link: null }, annotations: {}, plain_text: text, href: null }], color: 'default', ...extra });
   const mk = async (title, blocks) => { const r = (await api('POST', '/api/pages', { parent_id: db.id, title })).body; await api('PUT', `/api/pages/${r.id}/blocks`, { blocks }); return r; };
   const A = '00000000-0000-4000-8000-00000000000';
-  const old = await mk('Ancien cours', [{ id: A + '1', parent_id: null, type: 'heading_1', content: tx('Addenda :', { is_toggleable: false }) }, { id: A + '2', parent_id: null, type: 'toggle', content: tx('Émanant du P.S.A.') }, { id: A + '3', parent_id: A + '2', type: 'paragraph', content: tx('texte existant') }, { id: A + '4', parent_id: null, type: 'toggle', content: tx('Lié à la P.S.A.') }]);
+  const old = await mk('Ancien cours', [{ id: A + '1', parent_id: null, type: 'heading_1', content: tx('Addenda :', { is_toggleable: false }) }, { id: A + '2', parent_id: null, type: 'toggle', content: tx('Émanant du P.S.A.') }, { id: A + '3', parent_id: A + '2', type: 'paragraph', content: tx('texte existant') }, { id: A + '4', parent_id: null, type: 'toggle', content: tx('Lié à la P.S.A.') }, { id: A + '6', parent_id: null, type: 'button', content: { label: 'Bouton', color: 'default', actions: [] } }, { id: A + '7', parent_id: null, type: 'button', content: { label: 'Utile', color: 'default', actions: [{ type: 'notify', message: 'x' }] } }]);
   const none = await mk('Sans section', [{ id: A + '5', parent_id: null, type: 'paragraph', content: tx('rien') }]);
   const fromTpl = (await api('POST', `/api/pages/${db.id}/from-template/${psa.id}`, { today: '2026-11-22' })).body;
-  const dry = (await api('POST', `/api/pages/${db.id}/addenda-buttons`, { dry: true })).body;
-  assert.equal(dry.dry, true); assert.deepEqual(dry.updated, ['Ancien cours']); assert.equal(dry.buttons, 2);
+  const dry = (await api('POST', `/api/pages/${db.id}/architecture`, { dry: true })).body;
+  assert.equal(dry.dry, true); assert.equal(dry.removed_count, 1); assert.equal(dry.tbd, 'create'); assert.deepEqual(dry.updated, ['Ancien cours']); assert.equal(dry.buttons, 2);
   assert.ok(dry.already.includes('P.S.A. #00-26- (modèle)') && dry.already.includes(fromTpl.title || 'Sans titre') || dry.already.length >= 1);
   assert.deepEqual(dry.no_section.filter((t) => t === 'Sans section'), ['Sans section']);
-  assert.equal((await api('GET', `/api/pages/${old.id}`)).body.blocks.filter((b) => b.type === 'button').length, 0); // l'aperçu ne modifie rien
-  const run = (await api('POST', `/api/pages/${db.id}/addenda-buttons`, { dry: false })).body; assert.deepEqual(run.updated, ['Ancien cours']);
+  assert.equal((await api('GET', `/api/pages/${old.id}`)).body.blocks.filter((b) => b.type === 'button').length, 2); // l'aperçu ne modifie rien
+  const run = (await api('POST', `/api/pages/${db.id}/architecture`, { dry: false })).body; assert.deepEqual(run.updated, ['Ancien cours']);
   const bl = (await api('GET', `/api/pages/${old.id}`)).body.blocks, btns = bl.filter((b) => b.type === 'button');
-  assert.deepEqual(btns.map((b) => b.parent_id).sort(), [A + '2', A + '4']);
+  assert.deepEqual(btns.filter((b) => b.id !== A + '7').map((b) => b.parent_id).sort(), [A + '2', A + '4']);
   assert.equal(bl.filter((b) => b.parent_id === A + '2')[0].type, 'button'); // premier enfant du bloc déroulant
   assert.equal(bl.find((b) => b.id === A + '3').content.rich_text[0].plain_text, 'texte existant');
-  assert.equal(btns[0].content.actions[0].type, 'add_subpage'); assert.ok(btns[0].content.actions[0].text.includes('!> @Today'));
+  const nb0 = btns.find((b) => b.parent_id === A + '2'); assert.equal(nb0.content.actions[0].type, 'add_subpage'); assert.ok(nb0.content.actions[0].text.includes('!> @Today'));
+  assert.ok(!bl.some((b) => b.id === A + '6') && bl.some((b) => b.id === A + '7')); // bouton vide retiré, bouton avec action gardé
+  const dbp = (await api('GET', `/api/pages/${db.id}`)).body.page;
+  assert.equal(dbp.props.dw_defaults['Matière'].select.name, 'TBD'); assert.ok(dbp.schema['Matière'].select.options.some((o) => o.name === 'TBD'));
+  const nr = (await api('POST', '/api/pages', { parent_id: db.id, title: 'Nouvelle' })).body; assert.equal(nr.props['Matière'].select.name, 'TBD'); // nouvelle ligne : TBD
   assert.equal((await api('GET', `/api/pages/${none.id}`)).body.blocks.length, 1);
-  const again = (await api('POST', `/api/pages/${db.id}/addenda-buttons`, { dry: true })).body; assert.equal(again.updated.length, 0); // idempotent
+  const again = (await api('POST', `/api/pages/${db.id}/architecture`, { dry: true })).body; assert.equal(again.updated.length, 0); // idempotent
 });

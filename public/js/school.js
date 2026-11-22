@@ -70,27 +70,38 @@ async function importDialog(page) {
   }
 }
 
-/** Bouton « Nouvel addendum » dans la section « Addenda » de chaque page : aperçu d'abord, puis application après confirmation. */
-async function addendaDialog(page) {
+/** « Mettre à jour l'architecture » : aperçu de tout ce qui va changer, puis application après confirmation. */
+async function architectureDialog(page, { onDone } = {}) {
   let plan;
-  try { plan = await api.post(`/api/pages/${page.id}/addenda-buttons`, { dry: true }); } catch (e) { toast(e.message, 'error'); return; }
+  try { plan = await api.post(`/api/pages/${page.id}/architecture`, { dry: true }); } catch (e) { toast(e.message, 'error'); return; }
   const lst = (arr) => (arr.length ? h('details', {}, h('summary', {}, 'Voir la liste'), h('ul', { class: 'imp-paths small' }, arr.map((t) => h('li', {}, t)))) : null);
+  const drive = !!page.props?.dw_school?.options?.drive;
+  const tbd = { set: `La matière « TBD » deviendra la valeur par défaut de la colonne « ${plan.tbd_column} » : toute nouvelle ligne y sera rangée, sauf si tu la crées depuis la colonne d’une matière.`,
+    create: `L’option « TBD » sera ajoutée à la colonne « ${plan.tbd_column} » et deviendra sa valeur par défaut : toute nouvelle ligne y sera rangée, sauf si tu la crées depuis la colonne d’une matière.`,
+    already: `La colonne « ${plan.tbd_column} » a déjà une valeur par défaut : elle est conservée (modifiable avec « Par défaut »).`, no_column: 'Pas de colonne « Matière » (Sélection ou Statut) : aucune matière par défaut.' }[plan.tbd];
+  const nothing = !plan.updated.length && !plan.removed_count && (plan.tbd === 'already' || plan.tbd === 'no_column');
   const status = h('div', { class: 'muted' });
-  const go = h('button', { class: 'btn primary', disabled: !plan.updated.length, onclick: start }, plan.updated.length ? `Ajouter les boutons (${plural(plan.updated.length, 'page', 'pages')})` : 'Rien à ajouter');
+  const go = h('button', { class: 'btn primary', disabled: nothing, onclick: start }, nothing ? 'Rien à mettre à jour' : 'Mettre à jour');
   const cancel = h('button', { class: 'btn', onclick: () => m.close() }, 'Fermer');
   const body = h('div', { class: 'imp' },
-    h('p', {}, 'Un bouton « ＋ Nouvel addendum » sera ajouté dans la section « Addenda » : dans chaque bloc déroulant (ex. « Émanant du P.S.A. », « Lié à la P.S.A. »). Chaque addendum créé commence par la date du jour dans un encadré, entre deux séparateurs. Rien n’est encore modifié.'),
+    h('p', {}, 'Voici ce qui va se passer. Rien n’est encore modifié : tu peux fermer cette fenêtre. Chaque page modifiée garde sa version d’avant dans son historique (page → Historique).'),
     h('ul', {},
-      h('li', {}, `${plural(plan.updated.length, 'page recevra', 'pages recevront')} le bouton (${plural(plan.buttons, 'bouton', 'boutons')} au total, modèles de la base compris).`), lst(plan.updated),
-      h('li', {}, `${plural(plan.already.length, 'page a déjà', 'pages ont déjà')} un bouton de création de sous-page dans « Addenda » : elle${plan.already.length > 1 ? 's' : ''} ne ${plan.already.length > 1 ? 'seront' : 'sera'} pas touchée${plan.already.length > 1 ? 's' : ''}.`), lst(plan.already),
-      h('li', {}, `${plural(plan.no_section.length, 'page n’a', 'pages n’ont')} pas de section « Addenda » : rien n’y est ajouté.`), lst(plan.no_section)),
-    h('p', { class: 'muted small' }, 'Chaque page garde une version d’avant dans son historique (page → Historique) : tu peux revenir en arrière.'),
+      h('li', {}, plan.removed_count ? `${plural(plan.removed_count, 'bouton sans action sera retiré', 'boutons sans action seront retirés')} (pages et modèles).` : 'Aucun bouton sans action à retirer.'), lst(plan.removed),
+      h('li', {}, plan.updated.length ? `Le bouton « ＋ Nouvel addendum » sera ajouté dans la section « Addenda » de ${plural(plan.updated.length, 'page', 'pages')} (modèles compris) : il crée un addendum avec la date du jour dans un encadré entre deux séparateurs.` : 'Aucune page ne reçoit de bouton « Nouvel addendum ».'), lst(plan.updated),
+      plan.already.length ? h('li', {}, `${plural(plan.already.length, 'page a déjà', 'pages ont déjà')} un bouton de création de sous-page dans « Addenda » : pas touchée.`) : null, plan.already.length ? lst(plan.already) : null,
+      plan.no_section.length ? h('li', {}, `${plural(plan.no_section.length, 'page n’a', 'pages n’ont')} pas de section « Addenda » : rien n’y est ajouté.`) : null, plan.no_section.length ? lst(plan.no_section) : null,
+      h('li', {}, tbd)),
+    drive ? h('p', { class: 'muted small' }, 'Ensuite, une seconde fenêtre te propose de ranger tes cours existants dans Google Drive (avec son propre aperçu).') : null,
     status, h('div', { class: 'row-end' }, cancel, go));
-  const m = modal('Boutons « Nouvel addendum »', body);
+  const m = modal('Mettre à jour l’architecture', body);
   async function start() {
     go.disabled = true;
-    try { const r = await api.post(`/api/pages/${page.id}/addenda-buttons`, { dry: false }); status.textContent = `Terminé : ${plural(r.updated.length, 'page mise à jour', 'pages mises à jour')}.`; cancel.textContent = 'Fermer'; }
-    catch (e) { go.disabled = false; toast(e.message, 'error'); }
+    try {
+      const r = await api.post(`/api/pages/${page.id}/architecture`, { dry: false });
+      status.textContent = `Terminé : ${plural(r.updated.length, 'page a reçu', 'pages ont reçu')} le bouton, ${plural(r.removed_count, 'bouton vide retiré', 'boutons vides retirés')}${r.tbd === 'set' || r.tbd === 'create' ? ', matière par défaut « TBD » activée' : ''}.`;
+      onDone?.();
+      if (drive) { m.close(); importDialog(page); }
+    } catch (e) { go.disabled = false; toast(e.message, 'error'); }
   }
 }
 
@@ -106,8 +117,8 @@ export function openDatabaseSettings(page, { onSaved } = {}) {
       return h('label', { class: `school-opt ${ready ? '' : 'soon'}` }, box,
         h('span', { class: 'school-txt' }, h('b', {}, title, ready ? null : h('span', { class: 'rel-tag' }, 'Bientôt')), h('small', { class: 'muted' }, desc)));
     }));
-    const addendaTool = state.enabled ? [h('button', { class: 'btn small', onclick: () => addendaDialog(page) }, vi('plus', 14), 'Ajouter le bouton « Nouvel addendum »…'),
-      h('small', { class: 'muted' }, 'Ajoute le bouton dans la section « Addenda » de chaque page de la base. Un aperçu s’affiche d’abord.')] : [];
+    const addendaTool = state.enabled ? [h('button', { class: 'btn small', onclick: () => architectureDialog(page, { onDone: onSaved }) }, vi('refresh-cw', 14), 'Mettre à jour l’architecture…'),
+      h('small', { class: 'muted' }, 'Ajoute le bouton « Nouvel addendum », retire les boutons vides, met la matière « TBD » par défaut et propose de ranger les cours existants dans Drive. Un aperçu s’affiche d’abord.')] : [];
     tools.replaceChildren(...addendaTool, ...(state.enabled && state.options.drive ? [
       h('button', { class: 'btn small', onclick: () => importDialog(page) }, vi('folder', 14), 'Rattacher mes cours existants…'),
       h('small', { class: 'muted' }, 'Range tes cours déjà présents dans les dossiers Drive. Un aperçu s’affiche d’abord, rien ne bouge sans ta confirmation.')] : []));

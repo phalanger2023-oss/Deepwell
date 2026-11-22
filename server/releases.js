@@ -6,6 +6,14 @@
  */
 export const RELEASES = [
   {
+    version: '3.4.7', date: '2026-11-22',
+    nouveautes: [
+      'Mode scolaire : Réglages de la base → « Mettre à jour l’architecture… ». Un aperçu montre d’abord tout ce qui va changer, puis : les boutons sans aucune action sont retirés (pages et modèles), le bouton « ＋ Nouvel addendum » est ajouté dans la section « Addenda », et la matière « TBD » devient la valeur par défaut des nouvelles lignes (option créée si besoin ; une ligne créée depuis la colonne d’une matière garde cette matière). Si Drive est activé, une seconde fenêtre propose ensuite de ranger les cours existants dans Drive. Chaque page modifiée garde sa version d’avant dans l’historique.',
+    ],
+    ameliorations: [],
+    corrections: [],
+  },
+  {
     version: '3.4.6', date: '2026-11-22',
     nouveautes: [],
     ameliorations: [
@@ -17,7 +25,7 @@ export const RELEASES = [
     version: '3.4.5', date: '2026-11-22',
     nouveautes: [
       'Boutons → action « Créer une sous-page » : on peut maintenant choisir une page modèle existante dont tout le contenu (mise en forme, encadrés, séparateurs, boutons…) est copié dans la sous-page ; « @Today » dans le modèle devient la date du jour. Le contenu écrit à la main gagne aussi un encadré (ligne commençant par « !> ») et la vraie date du jour (« @Today »), et un bouton « ＋ En-tête d’addendum » met la date du jour dans un encadré entre deux séparateurs.',
-      'Mode scolaire : Réglages de la base → « Ajouter le bouton « Nouvel addendum »… ». Un aperçu indique les pages concernées, puis le bouton est ajouté dans chaque bloc déroulant de la section « Addenda » (créant un addendum avec la date du jour dans un encadré entre deux séparateurs). Les pages qui ont déjà un tel bouton ou pas de section « Addenda » ne sont pas touchées ; chaque page garde sa version d’avant dans l’historique. Le modèle « P.S.A. » de départ contient désormais ces boutons.',
+      'Mode scolaire : un aperçu indique les pages concernées, puis le bouton est ajouté dans chaque bloc déroulant de la section « Addenda » (créant un addendum avec la date du jour dans un encadré entre deux séparateurs). Les pages qui ont déjà un tel bouton ou pas de section « Addenda » ne sont pas touchées ; chaque page garde sa version d’avant dans l’historique. Le modèle « P.S.A. » de départ contient désormais ces boutons.',
     ],
     ameliorations: [
       'Un séparateur ajouté par « / » est toujours suivi d’un bloc de texte prêt à écrire (comme pour « --- »). Une sous-page créée par un bouton ne se termine jamais par un séparateur.',

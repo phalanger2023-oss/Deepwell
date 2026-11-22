@@ -90,39 +90,68 @@ function resolveMentions(content, today) {
 
 export function templatesRoutes(router, { autoProps, defaultProps, schoolPageChanged, writeBlocks, snapshot }) {
   /**
-   * Ajoute le bouton « Nouvel addendum » dans la section « Addenda » de chaque page (ligne ou modèle) de la base :
-   * dans chaque bloc déroulant de la section (ex. « Émanant du P.S.A. », « Lié à la P.S.A. »), ou juste sous le titre « Addenda » s'il n'y en a pas.
-   * Les pages qui ont déjà un bouton de création de sous-page dans cette section ne sont pas touchées. `dry` : aperçu seulement.
+   * « Mettre à jour l'architecture » d'une base scolaire (aperçu avec `dry`, sinon application) :
+   *  1. retire les boutons sans aucune action (pages et modèles de la base) ;
+   *  2. ajoute le bouton « Nouvel addendum » dans la section « Addenda » : dans chaque bloc déroulant (ex. « Émanant du P.S.A. »),
+   *     ou juste sous le titre « Addenda » s'il n'y en a pas — sauf si la section a déjà un bouton de création de sous-page ;
+   *  3. matière par défaut « TBD » pour les nouvelles lignes (option créée si besoin ; un défaut déjà choisi est conservé).
    */
-  router.post('/:id/addenda-buttons', requireAuth, (req, res) => {
+  router.post('/:id/architecture', requireAuth, (req, res) => {
     const d = dbOf(req, req.params.id, 'edit'), dry = req.body?.dry !== false;
     const pages = db.prepare("SELECT id,title,kind FROM pages WHERE parent_id=? AND kind IN ('page','template') AND archived=0 ORDER BY position").all(d.id);
-    const plan = { total: pages.length, updated: [], already: [], no_section: [], buttons: 0 };
-    const plain = (b) => textOf(parse(b.content, {})).trim();
+    const plan = { dry, total: pages.length, updated: [], already: [], no_section: [], buttons: 0, removed: [], removed_count: 0, tbd: null };
     for (const p of pages) {
-      const list = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(p.id).map((b) => ({ ...b, content: parse(b.content, {}) }));
-      const top = list.filter((b) => !b.parent_id), hi = top.findIndex((b) => /^heading_/.test(b.type) && /^addenda/i.test(textOf(b.content).trim()));
+      let list = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(p.id).map((b) => ({ id: b.id, parent_id: b.parent_id, type: b.type, content: parse(b.content, {}) }));
       const label = `${p.title || 'Sans titre'}${p.kind === 'template' ? ' (modèle)' : ''}`;
-      if (hi < 0) { plan.no_section.push(label); continue; }
-      const after = []; for (const b of top.slice(hi + 1)) { if (/^heading_1$/.test(b.type)) break; after.push(b); } // jusqu'au titre suivant
-      const sec = new Set(after.map((b) => b.id)); let grew = true; while (grew) { grew = false; for (const b of list) if (b.parent_id && sec.has(b.parent_id) && !sec.has(b.id)) { sec.add(b.id); grew = true; } }
-      if (list.some((b) => sec.has(b.id) && b.type === 'button' && (b.content.actions || []).some((a) => a.type === 'add_subpage'))) { plan.already.push(label); continue; }
-      const toggles = after.filter((b) => b.type === 'toggle'), adds = [];
-      if (toggles.length) for (const t of toggles) adds.push(addendumButton(t.id));
-      else adds.push({ ...addendumButton(null), after: top[hi].id });
-      plan.updated.push(label); plan.buttons += adds.length;
-      if (dry) continue;
+      // 1. boutons vides
+      const empty = new Set(list.filter((b) => b.type === 'button' && !(b.content.actions || []).length).map((b) => b.id));
+      let changed = false;
+      if (empty.size) { // un bouton n'a pas d'enfants, mais on emporte tout ce qui en dépendrait
+        let grew = true; while (grew) { grew = false; for (const b of list) if (b.parent_id && empty.has(b.parent_id) && !empty.has(b.id)) { empty.add(b.id); grew = true; } }
+        list = list.filter((b) => !empty.has(b.id)); changed = true; plan.removed.push(`${label} : ${empty.size}`); plan.removed_count += empty.size;
+      }
+      // 2. boutons « Nouvel addendum »
+      const top = list.filter((b) => !b.parent_id), hi = top.findIndex((b) => /^heading_/.test(b.type) && /^addenda/i.test(textOf(b.content).trim()));
+      const adds = [];
+      if (hi < 0) plan.no_section.push(label);
+      else {
+        const after = []; for (const b of top.slice(hi + 1)) { if (b.type === 'heading_1') break; after.push(b); } // jusqu'au titre suivant
+        const sec = new Set(after.map((b) => b.id)); let grew = true; while (grew) { grew = false; for (const b of list) if (b.parent_id && sec.has(b.parent_id) && !sec.has(b.id)) { sec.add(b.id); grew = true; } }
+        if (list.some((b) => sec.has(b.id) && b.type === 'button' && (b.content.actions || []).some((a) => a.type === 'add_subpage'))) plan.already.push(label);
+        else {
+          const toggles = after.filter((b) => b.type === 'toggle');
+          if (toggles.length) for (const t of toggles) adds.push(addendumButton(t.id)); else adds.push({ ...addendumButton(null), after: top[hi].id });
+          plan.updated.push(label); plan.buttons += adds.length;
+        }
+      }
+      if (dry || (!changed && !adds.length)) continue;
       tx(() => {
-        snapshot(p.id, req.user, 'Boutons « Nouvel addendum »', 0);
-        const out = list.map((b) => ({ id: b.id, parent_id: b.parent_id, type: b.type, content: b.content }));
+        snapshot(p.id, req.user, 'Mise à jour de l’architecture', 0);
+        const out = list;
         for (const a of adds) {
           const nb = { id: a.id, parent_id: a.parent_id, type: a.type, content: a.content };
-          if (a.after) { out.splice(out.findIndex((b) => b.id === a.after) + 1, 0, nb); } else out.unshift(nb); // premier enfant du bloc déroulant
+          if (a.after) out.splice(out.findIndex((b) => b.id === a.after) + 1, 0, nb); else out.unshift(nb); // premier enfant du bloc déroulant
         }
         writeBlocks(p.id, out);
       });
     }
-    res.json({ dry, ...plan });
+    // 3. matière par défaut « TBD »
+    const props = parse(d.props, {}) || {}, schema = parse(d.schema, {}) || {};
+    const key = Object.keys(schema).find((k) => /^mati/.test(k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()) && ['select', 'status'].includes(schema[k].type));
+    if (!key) plan.tbd = 'no_column';
+    else if (props.dw_defaults?.[key]) plan.tbd = 'already';
+    else {
+      const type = schema[key].type, opts = schema[key][type]?.options || [], found = opts.find((o) => String(o.name).trim().toLowerCase() === 'tbd');
+      plan.tbd = found ? 'set' : 'create';
+      if (!dry) {
+        const opt = found || { name: 'TBD', color: 'gray' };
+        if (!found) schema[key][type] = { ...schema[key][type], options: [...opts, opt] };
+        props.dw_defaults = { ...(props.dw_defaults || {}), [key]: { type, [type]: opt } };
+        db.prepare('UPDATE pages SET schema=?, props=?, updated_at=? WHERE id=?').run(JSON.stringify(schema), JSON.stringify(props), now(), d.id);
+      }
+    }
+    plan.tbd_column = key || null;
+    res.json(plan);
   });
   router.get('/:id/templates', requireAuth, (req, res) => {
     const d = dbOf(req, req.params.id, 'view');
