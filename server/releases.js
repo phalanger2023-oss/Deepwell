@@ -12,7 +12,9 @@ export const RELEASES = [
       'Kanban : la vue tient maintenant dans l’écran. Chaque colonne a sa propre barre de défilement verticale, et la barre de défilement horizontale reste toujours visible en bas au lieu de se perdre sous la page.',
       'Kanban : deux flèches (gauche et droite) apparaissent sur les côtés pour passer d’un groupe de colonnes à l’autre. On peut aussi faire défiler avec la molette de la souris au-dessus du fond ou de l’en-tête d’une colonne, ou « attraper » le fond du tableau avec la souris pour le faire glisser.',
     ],
-    corrections: [],
+    corrections: [
+      'Panneau latéral des bases de données : sur le site en ligne, il s’affichait comme une page blanche avec une icône triste, car le serveur interdisait l’affichage d’une page dans une autre. C’est maintenant autorisé pour DeepWell.',
+    ],
   },
   {
     version: '3.4.0', date: '2026-11-19',

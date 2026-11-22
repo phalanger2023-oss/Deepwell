@@ -25,7 +25,11 @@ services:
       - "traefik.http.routers.deepwell.rule=Host(`${DEEPWELL_HOST:-deepwell.louisharicuisine.com}`)"
       - "traefik.http.routers.deepwell.entrypoints=websecure"
       - "traefik.http.routers.deepwell.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.deepwell.middlewares=security-headers@file"
+      # Le panneau latéral des bases de données est une page DeepWell affichée dans une page DeepWell (cadre de même origine).
+      # Le middleware partagé security-headers envoie X-Frame-Options: DENY, ce qui bloque ce cadre : on le remplace
+      # par SAMEORIGIN pour DeepWell uniquement (les autres applications du serveur ne sont pas touchées).
+      - "traefik.http.middlewares.deepwell-frame.headers.customresponseheaders.X-Frame-Options=SAMEORIGIN"
+      - "traefik.http.routers.deepwell.middlewares=deepwell-frame,security-headers@file"
       - "traefik.http.services.deepwell.loadbalancer.server.port=3000"
       # La connexion est gérée par DeepWell lui-même (le premier compte créé devient administrateur)
 
