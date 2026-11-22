@@ -9,7 +9,7 @@ export const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 for (const d of [DATA_DIR, UPLOAD_DIR, BACKUP_DIR]) fs.mkdirSync(d, { recursive: true });
 
 export const db = new DatabaseSync(process.env.DB_PATH || path.join(DATA_DIR, 'deepwell.db'));
-db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
+db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY; PRAGMA cache_size=-32768; PRAGMA mmap_size=134217728;');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS users(
@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS blocks(
   text TEXT NOT NULL DEFAULT '', position REAL NOT NULL DEFAULT 0,
   notion_id TEXT, raw TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS blocks_page ON blocks(page_id);
+CREATE INDEX IF NOT EXISTS blocks_page_pos ON blocks(page_id, position);
+CREATE INDEX IF NOT EXISTS pages_parent_pos ON pages(parent_id, archived, position);
 CREATE TABLE IF NOT EXISTS shares(
   id TEXT PRIMARY KEY, page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
   user_id TEXT REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL,

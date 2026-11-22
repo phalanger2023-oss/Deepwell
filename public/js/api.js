@@ -21,7 +21,7 @@ async function call(method, url, body, opts = {}) {
 
 export const api = {
   get: (u) => call('GET', u),
-  post: (u, b) => call('POST', u, b ?? {}),
+  post: (u, b, o) => call('POST', u, b ?? {}, o),
   put: (u, b, o) => call('PUT', u, b, o),
   patch: (u, b) => call('PATCH', u, b),
   del: (u) => call('DELETE', u),

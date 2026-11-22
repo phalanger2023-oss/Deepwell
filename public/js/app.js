@@ -84,16 +84,17 @@ function renderAuth(me) {
     const email = h('input', { class: 'input', type: 'email', placeholder: 'E-mail', required: true, autocomplete: 'username' });
     const name = h('input', { class: 'input', placeholder: 'Nom (facultatif)', autocomplete: 'name' });
     const pw = h('input', { class: 'input', type: 'password', placeholder: 'Mot de passe (8 caractères min.)', required: true, autocomplete: mode === 'login' ? 'current-password' : 'new-password' });
+    const remember = h('input', { type: 'checkbox', checked: store.get('dw_remember', true) ? true : null, onchange: (e) => store.set('dw_remember', e.target.checked) });
     const form = h('form', { class: 'auth-card', onsubmit: async (e) => {
       e.preventDefault(); err.textContent = '';
       try {
-        const r = await api.post(`/api/auth/${mode}`, { email: email.value, password: pw.value, name: name.value });
+        const r = await api.post(`/api/auth/${mode}`, { email: email.value, password: pw.value, name: name.value, remember: remember.checked });
         S.me = r.user; startShell(false);
       } catch (x) { err.textContent = x.message; }
     } },
       h('div', { class: 'logo' }, S.settings.site_name || 'Deepwell'),
       h('h2', {}, mode === 'login' ? 'Connexion' : me.needsSetup ? 'Créer le compte administrateur' : 'Créer un compte'),
-      mode === 'register' ? name : null, email, pw, err,
+      mode === 'register' ? name : null, email, pw, mode === 'login' ? h('label', { class: 'check small' }, remember, 'Rester connecté 90 jours sur cet appareil') : null, err,
       h('button', { class: 'btn primary wide' }, mode === 'login' ? 'Se connecter' : 'Créer le compte'),
       me.allowSignup && !me.needsSetup ? h('a', { href: '#', class: 'muted', onclick: (ev) => { ev.preventDefault(); mode = mode === 'login' ? 'register' : 'login'; draw(); } }, mode === 'login' ? 'Pas de compte ? S’inscrire' : 'Déjà un compte ? Se connecter') : null);
     root.replaceChildren(h('div', { class: 'auth' }, form));
@@ -499,6 +500,18 @@ async function modernizeDialog(page, onDone) {
       } }, 'Mettre à jour'))));
 }
 const hasDbAncestor = (p) => { let c = S.pageMap?.get(p.parent_id), n = 0; while (c && n++ < 5) { if (c.kind === 'database') return true; c = S.pageMap.get(c.parent_id); } return false; };
+/** Battement de présence : alimente « Réglages → Connexions » (temps passé par page, comptes et liens publics). */
+function startPing(pageId) {
+  clearInterval(S.pingTimer); S.pingVisit = null; S.lastAct = S.lastAct || Date.now();
+  if (!pageId) return;
+  const send = async (keepalive) => {
+    if (S.current?.id !== pageId || (document.visibilityState !== 'visible' && !keepalive)) return;
+    if (S.pingVisit && Date.now() - (S.lastAct || 0) > 5 * 60_000 && !keepalive) return; // inactif : on ne compte pas
+    try { const r = await api.post('/api/activity', { page_id: pageId, visit: S.pingVisit, token: S.token || undefined }, { keepalive }); if (r.visit) S.pingVisit = r.visit; } catch { /* sans importance */ }
+  };
+  send(false); S.pingTimer = setInterval(() => send(false), 30_000);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.pingVisit && S.current) api.post('/api/activity', { page_id: S.current.id, visit: S.pingVisit, token: S.token || undefined }, { keepalive: true }).catch(() => {}); });
 async function showPage(id) {
   S.editor?.destroy(); S.editor = null; S.current = null; S.dirty = false; S.tocCleanup?.(); S.tocCleanup = null;
   mainEl.replaceChildren(h('div', { class: 'loading' }, loadingText()));
@@ -514,7 +527,7 @@ async function showPage(id) {
   }
   const { page, blocks, children, crumbs, role } = data;
   S.current = page; drawSidebar();
-  armIdleLock(page.id);
+  armIdleLock(page.id); startPing(page.id);
   if (!S.token) recordVisit(page.id);
   const editable = (role === 'edit' || role === 'owner') && !S.token && !page.archived;
   document.title = `${prettify(page.title) || 'Sans titre'} — ${S.settings.site_name || 'Deepwell'}`;
@@ -995,16 +1008,16 @@ async function showReleases() {
 }
 
 // ================= réglages =================
-const TABS = [['dev', 'Développeur'], ['profile', 'Profil'], ['datetime', 'Date et heure'], ['appearance', 'Apparence'], ['drive', 'Google Drive'], ['import', 'Import Notion'], ['backup', 'Sauvegardes'], ['users', 'Utilisateurs']];
+const TABS = [['dev', 'Développeur'], ['profile', 'Profil'], ['datetime', 'Date et heure'], ['appearance', 'Apparence'], ['drive', 'Google Drive'], ['import', 'Import Notion'], ['backup', 'Sauvegardes'], ['activity', 'Connexions'], ['users', 'Utilisateurs']];
 async function showSettings(tab) {
   S.current = null; drawSidebar();
   const isAdmin = S.me.role === 'admin';
   const panel = h('div', { class: 'settings-panel' });
   mainEl.replaceChildren(topbar([{ title: 'Réglages' }]), h('div', { class: 'scroll' }, h('div', { class: 'page settings' },
     h('h1', { class: 'title static' }, '⚙ Réglages'),
-    h('div', { class: 'tabs' }, TABS.filter(([k]) => isAdmin || !['backup', 'users', 'dev'].includes(k)).map(([k, l]) => h('a', { href: `#/settings/${k}`, class: k === tab ? 'on' : '' }, l))), panel)));
-  const fn = { profile: tabProfile, datetime: tabDatetime, appearance: tabAppearance, drive: tabDrive, import: tabImport, backup: tabBackup, users: tabUsers, dev: tabDev }[tab] || tabProfile;
-  if (['backup', 'users', 'dev'].includes(tab) && !isAdmin) return panel.append(h('p', {}, 'Réservé aux administrateurs.'));
+    h('div', { class: 'tabs' }, TABS.filter(([k]) => isAdmin || !['backup', 'users', 'dev', 'activity'].includes(k)).map(([k, l]) => h('a', { href: `#/settings/${k}`, class: k === tab ? 'on' : '' }, l))), panel)));
+  const fn = { profile: tabProfile, datetime: tabDatetime, appearance: tabAppearance, drive: tabDrive, import: tabImport, backup: tabBackup, activity: tabActivity, users: tabUsers, dev: tabDev }[tab] || tabProfile;
+  if (['backup', 'users', 'dev', 'activity'].includes(tab) && !isAdmin) return panel.append(h('p', {}, 'Réservé aux administrateurs.'));
   try { await fn(panel); } catch (e) { panel.append(h('div', { class: 'form-err' }, e.message)); }
 }
 const field = (label, input, help) => h('label', { class: 'field' }, h('span', {}, label), input, help ? h('small', { class: 'muted' }, help) : null);
@@ -1208,6 +1221,36 @@ async function tabBackup(p) {
         h('td', {}, h('a', { class: 'btn small', href: `/api/admin/backups/${b.name}` }, 'Télécharger'), ' ',
           drive.connected ? h('button', { class: 'btn small', onclick: async (e) => { e.target.disabled = true; try { await api.post(`/api/admin/backups/${b.name}/drive`); toast('Envoyé sur Google Drive'); } catch (x) { toast(x.message, 'error'); } e.target.disabled = false; } }, '→ Drive') : null))) : h('tr', {}, h('td', { class: 'muted' }, 'Aucune sauvegarde')))),
       h('details', { class: 'limits' }, h('summary', {}, 'Comment restaurer'), h('p', {}, 'Arrêtez le serveur, puis :'), h('pre', { class: 'log' }, 'npm run restore -- data/backups/deepwell-AAAA-MM-JJT….db.gz'), h('p', { class: 'muted' }, 'Les fichiers téléversés sont déjà dans data/uploads ; leur copie de secours est dans data/backups/uploads.')));
+  };
+  await draw();
+}
+
+const fmtDur = (sec) => { sec = Math.round(sec || 0); if (sec < 60) return `${sec} s`; const m = Math.floor(sec / 60); if (m < 60) return `${m} min ${String(sec % 60).padStart(2, '0')} s`; return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`; };
+const fmtDT = (t) => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+async function tabActivity(p) {
+  let kind = '', days = 30;
+  const draw = async () => {
+    const q = `?days=${days}${kind ? `&kind=${kind}` : ''}`;
+    const [sessions, log, vis] = await Promise.all([api.get('/api/admin/activity/sessions'), api.get('/api/admin/activity/log'), api.get(`/api/admin/activity/visits${q}`)]);
+    const sel = (opts, cur, fn) => h('select', { class: 'input', onchange: (e) => fn(e.target.value) }, opts.map(([v, l]) => h('option', { value: v, selected: String(v) === String(cur) }, l)));
+    const who = (v) => v.actor === 'link' ? h('span', {}, h('span', { class: 'rel-tag' }, 'Lien public'), ` ${v.ip || ''}`) : (v.user_name || v.user_email || 'Compte');
+    const KIND = { login: 'Connexion', login_fail: 'Échec de connexion', logout: 'Déconnexion', register: 'Création de compte' };
+    p.replaceChildren(
+      section('Appareils connectés', 'Les sessions ouvertes (connexion de 90 jours si « Rester connecté » est coché, 30 jours sinon ; chaque visite la renouvelle). Retirer un appareil le déconnecte immédiatement.',
+        h('table', { class: 'plain' }, h('tbody', {}, sessions.map((s) => h('tr', {}, h('td', {}, s.name || s.email, s.current ? h('span', { class: 'rel-tag' }, 'cet appareil') : null), h('td', {}, s.device), h('td', { class: 'muted small' }, s.ip || ''),
+          h('td', { class: 'muted small' }, 'actif ', fmtDT(s.last_seen || s.created_at)), h('td', { class: 'muted small' }, 'valide jusqu’au ', new Date(s.expires_at).toLocaleDateString('fr-FR')),
+          h('td', {}, s.current ? null : h('button', { class: 'btn small danger', onclick: async () => { await api.del(`/api/admin/activity/sessions/${s.id}`); draw(); } }, 'Déconnecter'))))))),
+      section('Consultations des pages', 'Temps passé par page (page visible et utilisateur actif, mesuré toutes les 30 s), pour les comptes et pour les liens publics sans compte. Conservé 1 an.',
+        h('div', { class: 'row-end', style: 'justify-content:flex-start;gap:8px' }, sel([['', 'Comptes et liens publics'], ['link', 'Liens publics seulement'], ['user', 'Comptes seulement']], kind, (v) => { kind = v; draw(); }),
+          sel([[7, '7 jours'], [30, '30 jours'], [90, '90 jours'], [365, '1 an']], days, (v) => { days = Number(v); draw(); })),
+        vis.pages.length ? h('table', { class: 'plain' }, h('thead', {}, h('tr', {}, ['Page', 'Consultations', 'Visiteurs', 'Temps total', 'Dernière'].map((x) => h('th', {}, x)))),
+          h('tbody', {}, vis.pages.map((r) => h('tr', {}, h('td', {}, h('a', { href: `#/page/${r.page_id}` }, prettify(r.page_title) || 'Sans titre'), r.link_visits ? h('span', { class: 'rel-tag' }, `${r.link_visits} via lien`) : null),
+            h('td', {}, r.visits), h('td', {}, r.visitors), h('td', {}, fmtDur(r.seconds)), h('td', { class: 'muted small' }, fmtDT(r.last_seen)))))) : h('p', { class: 'muted' }, 'Aucune consultation sur la période.'),
+        vis.visits.length ? h('details', { class: 'limits' }, h('summary', {}, `Dernières consultations (${vis.visits.length})`), h('table', { class: 'plain' }, h('tbody', {}, vis.visits.map((v) => h('tr', {},
+          h('td', { class: 'muted small' }, fmtDT(v.started_at)), h('td', {}, who(v)), h('td', {}, prettify(v.page_title) || 'Sans titre'), h('td', {}, fmtDur(v.seconds)), h('td', { class: 'muted small' }, v.device)))))) : null),
+      section('Journal des connexions', 'Connexions, échecs de mot de passe et déconnexions (200 dernières).',
+        h('details', { class: 'limits' }, h('summary', {}, 'Afficher le journal'), h('table', { class: 'plain' }, h('tbody', {}, log.map((l) => h('tr', {},
+          h('td', { class: 'muted small' }, fmtDT(l.at)), h('td', {}, KIND[l.kind] || l.kind), h('td', {}, l.email || '—'), h('td', { class: 'muted small' }, l.ip || ''), h('td', { class: 'muted small' }, l.device))))))));
   };
   await draw();
 }

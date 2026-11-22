@@ -8,6 +8,8 @@ export const RELEASES = [
   {
     version: '3.4.11', date: '2026-11-22',
     nouveautes: [
+      'Rester connecté : case « Rester connecté 90 jours sur cet appareil » à la connexion (cochée par défaut ; sinon 30 jours). La durée se renouvelle à chaque visite.',
+      'Réglages → Connexions (administrateur) : appareils connectés (avec bouton « Déconnecter »), consultations de pages avec le temps passé — comptes ET liens publics sans compte — et journal des connexions (réussies, échecs de mot de passe, déconnexions). Conservé 1 an.',
       'Pages verrouillées dans une base : tant que le code n’est pas saisi, la ligne apparaît « expurgée » (barres noires + mention EXPURGÉ) dans toutes les vues : ni titre, ni icône, ni propriétés, ni contenu ; elle n’apparaît pas non plus dans la recherche ni dans l’arborescence. Une ligne masquée ne peut plus être déplacée ni modifiée à l’aveugle.',
       'Un code saisi reste valable 24 h (nouvelle durée par défaut ; les verrous restés sur l’ancien défaut de 15 min passent à 24 h) et ouvre aussi toutes les autres pages qui ont le même code, quels que soient leurs autres réglages. « Verrouiller maintenant » (ou l’inactivité réglée sur la page) referme tout.',
       'Fichiers du chapitre dans l’aperçu latéral : les boutons d’une ligne de fichier passent à la ligne au lieu de dépasser du cadre.',
@@ -21,7 +23,8 @@ export const RELEASES = [
       'La pastille jaune apparaît aussi directement dans les vues de la base scolaire (tableau, Kanban, galerie, liste, calendrier), sur chaque ancienne page.',
       'Icône de l’onglet du navigateur : celle de la page affichée ; sans icône de page, l’icône du site choisie dans Réglages → Apparence ; sinon l’icône par défaut.',
     ],
-    ameliorations: [],
+    ameliorations: [
+      'Performances : arbre des pages et grandes bases ~5 à 6 fois plus rapides (droits d’accès préparés une fois, vérification des verrous évitée quand il n’y en a pas), index SQLite supplémentaires, réglages SQLite (cache, écriture WAL), fichiers du site compressés une seule fois et gardés en mémoire.',],
     corrections: [
       'Retour arrière dans un bloc de texte vide : le bloc est supprimé, y compris juste après un séparateur ou un bloc non textuel.',
     ],

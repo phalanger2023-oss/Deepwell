@@ -16,6 +16,7 @@ import { RELEASES } from './releases.js';
 import { startJobWorker } from './jobs.js';
 import { schoolRouter } from './school-drive.js';
 import { pdmRouter } from './pdm.js';
+import { pingRouter, activityRouter } from './activity.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const app = express();
@@ -25,6 +26,7 @@ app.use((_req, res, next) => {
   res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'SAMEORIGIN' });
   next();
 });
+const GZ = new Map();
 /** Compression gzip des réponses texte (JSON, JS, CSS, HTML, SVG) : pages volumineuses et chargement initial bien plus rapides. */
 app.use((req, res, next) => {
   if (!/gzip/.test(req.headers['accept-encoding'] || '') || req.path.startsWith('/files/') || /\/(files|export|backups)(\/|$)/.test(req.path)) return next();
@@ -34,7 +36,10 @@ app.use((req, res, next) => {
     if (c && typeof c !== 'function') chunks.push(Buffer.from(c, typeof enc === 'string' ? enc : undefined));
     const body = Buffer.concat(chunks), type = String(res.getHeader('Content-Type') || '');
     if (body.length < 1024 || !/json|javascript|css|html|svg|^text\//.test(type) || res.getHeader('Content-Encoding') || res.statusCode === 304 || req.method === 'HEAD') return end(body, typeof enc === 'function' ? enc : cb);
-    const z = zlib.gzipSync(body, { level: 5 });
+    // fichiers statiques (JS/CSS/HTML) : la version compressée est gardée en mémoire tant que le fichier ne change pas (au lieu de recompresser à chaque requête)
+    const etag = !req.path.startsWith('/api') && res.getHeader('ETag'), ck = etag && `${req.path}|${etag}`;
+    let z = ck && GZ.get(ck);
+    if (!z) { z = zlib.gzipSync(body, { level: ck ? 9 : 5 }); if (ck) { if (GZ.size >= 80) GZ.delete(GZ.keys().next().value); GZ.set(ck, z); } }
     res.setHeader('Content-Encoding', 'gzip'); res.setHeader('Vary', 'Accept-Encoding'); res.setHeader('Content-Length', z.length);
     return end(z, typeof enc === 'function' ? enc : cb);
   };
@@ -54,6 +59,8 @@ app.use('/api/pages', pagesRouter);
 app.use('/api/drive', driveRouter);
 app.use('/api/school', schoolRouter);
 app.use('/api/pdm', pdmRouter);
+app.use('/api/activity', pingRouter);
+app.use('/api/admin/activity', activityRouter);
 
 // --- Réglages (personnalisation) ---
 const PUBLIC_KEYS = ['site_name', 'accent', 'font', 'radius', 'custom_css', 'default_theme', 'content_width', 'divider_color', 'text_size', 'favicon', 'dev_mode'];

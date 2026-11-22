@@ -7,11 +7,12 @@ const NAMES = ['', 'view', 'comment', 'edit', 'owner'];
  * Droit effectif d'un utilisateur (ou d'un jeton de lien public) sur une page.
  * Les droits sont hérités : un partage sur un parent s'applique aux sous-pages.
  */
+const getPage = db.prepare('SELECT id,parent_id,owner_id FROM pages WHERE id=?'); // préparées une seule fois (chemin très fréquent)
+const userShare = db.prepare('SELECT role FROM shares WHERE page_id=? AND user_id=?');
+const tokenShare = db.prepare('SELECT role FROM shares WHERE page_id=? AND public_token=?');
+const parentOf = db.prepare('SELECT parent_id FROM pages WHERE id=?');
 export function accessFor(user, pageId, token) {
   let best = 0, id = pageId, guard = 0;
-  const getPage = db.prepare('SELECT id,parent_id,owner_id FROM pages WHERE id=?');
-  const userShare = db.prepare('SELECT role FROM shares WHERE page_id=? AND user_id=?');
-  const tokenShare = db.prepare('SELECT role FROM shares WHERE page_id=? AND public_token=?');
   while (id && guard++ < 500) {
     const p = getPage.get(id);
     if (!p) return null;
@@ -29,7 +30,7 @@ export function isDescendant(pageId, ancestorId) {
   let id = pageId, guard = 0;
   while (id && guard++ < 500) {
     if (id === ancestorId) return true;
-    id = db.prepare('SELECT parent_id FROM pages WHERE id=?').get(id)?.parent_id;
+    id = parentOf.get(id)?.parent_id;
   }
   return false;
 }

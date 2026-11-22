@@ -1,9 +1,13 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import { db, uid, now, getSetting } from './db.js';
+import { logConn, clientInfo } from './connlog.js';
 
-const SESSION_MS = 30 * 24 * 3600 * 1000;
+const DAY = 24 * 3600 * 1000;
+const SESSION_MS = 30 * DAY, LONG_SESSION_MS = 90 * DAY; // connexion normale 30 j ; « rester connecté » 90 j (durée glissante : chaque visite la renouvelle)
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
+
+export const sessionId = (req) => { const t = cookies(req).dw_session; return t ? sha(t).slice(0, 16) : null; };
 
 export function hashPassword(pw) {
   const salt = crypto.randomBytes(16);
@@ -25,21 +29,34 @@ function cookies(req) {
   return out;
 }
 
-export function createSession(res, req, userId) {
-  const token = crypto.randomBytes(32).toString('base64url');
-  db.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').run(sha(token), userId, now() + SESSION_MS);
+function setCookie(res, req, token, ttl) {
   const secure = req.secure || process.env.COOKIE_SECURE === '1';
-  res.append('Set-Cookie', `dw_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_MS / 1000}${secure ? '; Secure' : ''}`);
+  res.append('Set-Cookie', `dw_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(ttl / 1000)}${secure ? '; Secure' : ''}`);
 }
+export function createSession(res, req, userId, remember = true) {
+  const token = crypto.randomBytes(32).toString('base64url'), ttl = remember ? LONG_SESSION_MS : SESSION_MS, { ip, ua } = clientInfo(req), t = now();
+  db.prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen,ip,ua,ttl_ms) VALUES(?,?,?,?,?,?,?,?)').run(sha(token), userId, t + ttl, t, t, ip, ua, ttl);
+  setCookie(res, req, token, ttl);
+}
+const touched = new Map(); // dernier renouvellement par session (au plus 1 écriture / 10 min)
 
 /** Middleware : renseigne req.user si une session valide existe. */
-export function sessionMiddleware(req, _res, next) {
+export function sessionMiddleware(req, res, next) {
   req.user = null;
   const t = cookies(req).dw_session;
   if (t) {
-    const row = db.prepare(`SELECT u.id,u.email,u.name,u.role,s.expires_at FROM sessions s
-      JOIN users u ON u.id=s.user_id WHERE s.token_hash=?`).get(sha(t));
-    if (row && row.expires_at > now()) req.user = { id: row.id, email: row.email, name: row.name, role: row.role };
+    const h = sha(t);
+    const row = db.prepare(`SELECT u.id,u.email,u.name,u.role,s.expires_at,s.ttl_ms FROM sessions s
+      JOIN users u ON u.id=s.user_id WHERE s.token_hash=?`).get(h);
+    if (row && row.expires_at > now()) {
+      req.user = { id: row.id, email: row.email, name: row.name, role: row.role };
+      if (now() - (touched.get(h) || 0) > 10 * 60_000) { // dernière activité + durée glissante (cookie renouvelé avec)
+        touched.set(h, now()); if (touched.size > 5000) touched.clear();
+        const ttl = row.ttl_ms || SESSION_MS, { ip, ua } = clientInfo(req);
+        db.prepare('UPDATE sessions SET last_seen=?, expires_at=?, ip=?, ua=? WHERE token_hash=?').run(now(), now() + ttl, ip, ua, h);
+        if (req.path.startsWith('/api')) setCookie(res, req, t, ttl);
+      }
+    }
   }
   next();
 }
@@ -76,7 +93,8 @@ authRouter.post('/register', (req, res) => {
   const id = uid();
   db.prepare('INSERT INTO users(id,email,name,password_hash,role,created_at) VALUES(?,?,?,?,?,?)')
     .run(id, mail, String(name).slice(0, 100), hashPassword(password), count === 0 ? 'admin' : 'member', now());
-  createSession(res, req, id);
+  createSession(res, req, id, true);
+  logConn(req, 'register', { userId: id, email: mail });
   res.json({ user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(id)) });
 });
 
@@ -87,15 +105,18 @@ authRouter.post('/login', (req, res) => {
   const u = validEmail(email) && db.prepare('SELECT * FROM users WHERE email=?').get(email.trim().toLowerCase());
   if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
     attempts.get(key).push(now());
+    logConn(req, 'login_fail', { email: validEmail(email) ? email.trim().toLowerCase() : null });
     return res.status(401).json({ error: 'E-mail ou mot de passe incorrect' });
   }
-  createSession(res, req, u.id);
+  createSession(res, req, u.id, req.body?.remember !== false);
+  logConn(req, 'login', { userId: u.id, email: u.email });
   res.json({ user: publicUser(u) });
 });
 
 authRouter.post('/logout', (req, res) => {
   const t = cookies(req).dw_session;
   if (t) db.prepare('DELETE FROM sessions WHERE token_hash=?').run(sha(t));
+  if (req.user) logConn(req, 'logout', { userId: req.user.id, email: req.user.email });
   res.append('Set-Cookie', 'dw_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0');
   res.json({ ok: true });
 });
@@ -109,7 +130,7 @@ authRouter.put('/me', requireAuth, (req, res) => {
     if (String(password).length < 8) return res.status(400).json({ error: 'Mot de passe : 8 caractères minimum' });
     db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(password), req.user.id);
     db.prepare('DELETE FROM sessions WHERE user_id=?').run(req.user.id);
-    createSession(res, req, req.user.id);
+    createSession(res, req, req.user.id, true);
   }
   res.json({ user: publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id)) });
 });

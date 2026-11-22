@@ -53,7 +53,8 @@ export const isOpen = (req, lock) => {
   return false;
 };
 /** Pages de `ids` verrouillées ET non ouvertes pour cette requête. */
-export const closedIds = (req, ids) => new Set(ids.filter((i) => { const l = lockFor(i); return l && !isOpen(req, l); }));
+const hasLocks = db.prepare('SELECT 1 FROM page_locks LIMIT 1');
+export const closedIds = (req, ids) => !hasLocks.get() ? new Set() : new Set(ids.filter((i) => { const l = lockFor(i); return l && !isOpen(req, l); }));
 
 /** Middleware `router.param('id')` : refuse (423) tout accès au contenu d'une page verrouillée tant qu'elle n'est pas ouverte. */
 export function lockGuard(req, res, next, id) {
@@ -73,7 +74,7 @@ export function lockGuard(req, res, next, id) {
   res.status(423).json({ error: 'Page verrouillée', locked: true, page: p, lock_page_id: lock.page_id });
 }
 
-export const lockedIds = (ids) => new Set(ids.filter((i) => lockFor(i)));
+export const lockedIds = (ids) => !hasLocks.get() ? new Set() : new Set(ids.filter((i) => lockFor(i)));
 
 export const lockRouter = express.Router({ mergeParams: true });
 const pinOk = (p) => typeof p === 'string' && p.length >= 4 && p.length <= 64;
