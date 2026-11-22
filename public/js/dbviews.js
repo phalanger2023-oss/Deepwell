@@ -95,7 +95,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
 
   const saveSchema = () => api.patch(`/api/pages/${page.id}`, { schema }).catch((e) => toast(e.message, 'error'));
   const saveViews = () => api.patch(`/api/pages/${page.id}`, { views }).catch((e) => toast(e.message, 'error'));
-  const visibleProps = (v) => (v.props ? allProps.filter((p) => p === tk || v.props.includes(p)) : allProps);
+  const visibleProps = (v) => (v.props ? [tk, ...v.props.filter((p) => p !== tk && schema[p])] : allProps); // l'ordre de v.props est l'ordre d'affichage choisi (le titre reste en tête)
   const cardProps = (v) => (v.props ? v.props.filter((p) => p !== tk && schema[p]) : allProps.filter((p) => p !== tk && p !== v.group_by && p !== v.date_prop && ['select', 'status', 'multi_select', 'date', 'number', 'checkbox', 'people', 'url'].includes(schema[p].type)).slice(0, 3));
   const firstOf = (types) => allProps.find((p) => types.includes(schema[p].type));
 
@@ -226,8 +226,21 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
   }
   function propsMenu(anchor, v) {
     document.querySelector('.ctx-menu')?.remove();
-    const cur = new Set((v.type === 'board' || v.type === 'gallery' || v.type === 'list' || v.type === 'calendar') ? cardProps(v) : visibleProps(v)), list = h('div', { class: 'ctx-menu db-props' }, h('div', { class: 'bm-title' }, 'Propriétés affichées'),
-      allProps.filter((p) => p !== tk).map((p) => h('label', { class: 'bm-color' }, h('input', { type: 'checkbox', checked: cur.has(p), disabled: !editable, onchange: (e) => { e.target.checked ? cur.add(p) : cur.delete(p); v.props = allProps.filter((x) => x === tk || cur.has(x)); saveViews(); draw(); } }), p)));
+    const card = v.type === 'board' || v.type === 'gallery' || v.type === 'list' || v.type === 'calendar';
+    let order = (card ? cardProps(v) : visibleProps(v)).filter((p) => p !== tk); // propriétés affichées, dans l'ordre d'affichage
+    const list = h('div', { class: 'ctx-menu db-props' });
+    const commit = () => { v.props = [tk, ...order]; saveViews(); draw(); drawMenu(); };
+    const move = (p, d) => { const i = order.indexOf(p), j = i + d; if (j < 0 || j >= order.length) return; [order[i], order[j]] = [order[j], order[i]]; commit(); };
+    const row = (p, shown) => h('div', { class: 'bm-color prop-row' },
+      h('label', { class: 'prop-lab' }, h('input', { type: 'checkbox', checked: shown, disabled: !editable, onchange: (e) => { order = e.target.checked ? [...order, p] : order.filter((x) => x !== p); commit(); } }), p),
+      shown && editable ? h('span', { class: 'prop-move' },
+        h('button', { class: 'icon-btn', title: 'Monter', 'aria-label': `Monter ${p}`, disabled: order.indexOf(p) === 0, onclick: () => move(p, -1) }, vi('chevron-up', 14)),
+        h('button', { class: 'icon-btn', title: 'Descendre', 'aria-label': `Descendre ${p}`, disabled: order.indexOf(p) === order.length - 1, onclick: () => move(p, 1) }, vi('chevron-down', 14))) : null);
+    function drawMenu() {
+      const hidden = allProps.filter((p) => p !== tk && !order.includes(p));
+      list.replaceChildren(h('div', { class: 'bm-title' }, 'Propriétés affichées'), ...order.map((p) => row(p, true)), ...(hidden.length ? [h('div', { class: 'bm-title prop-sub' }, 'Masquées'), ...hidden.map((p) => row(p, false))] : []));
+    }
+    drawMenu();
     const r = anchor.getBoundingClientRect(); list.style.left = `${r.left}px`; list.style.top = `${r.bottom + 4}px`; document.body.append(list);
     autoClose(list);
   }
