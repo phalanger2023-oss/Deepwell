@@ -89,7 +89,7 @@ export async function mountSchoolFiles(host, page) {
       info.editable && !f.folder && !f.annotates && /pdf/i.test(f.mime || f.name) && !info.files.some((x) => x.annotates === f.id)
         ? h('button', { class: 'btn small', title: 'Ajoute une version déjà annotée (ex. faite sur Canva) à côté de cet original, qui reste vierge', onclick: () => annotate(f) }, vi('pen-line', 14), 'Ajouter une version annotée') : null,
       f.pdm ? h('a', { class: 'btn small', href: f.pdm.url, target: '_blank', rel: 'noopener', title: 'Ouvrir la version annotée dans PDM' }, vi('pen-line', 14), 'Éditer dans PDM') : null,
-      f.pdm ? h('a', { class: 'btn small', href: f.pdm.original_url, title: 'Télécharger le PDF d’origine, vierge (jamais modifié par PDM)' }, vi('download', 14), 'Original vierge') : null,
+      f.pdm && !f.annotates ? h('a', { class: 'btn small', href: f.pdm.original_url, title: 'Télécharger le PDF d’origine, vierge (jamais modifié par PDM)' }, vi('download', 14), 'Original vierge') : null,
       f.pdm_pending ? h('span', { class: 'muted small', title: 'Le document est déposé dans PDM en tâche de fond ; les liens apparaissent dès que c’est fait.' }, 'Envoi vers PDM…') : null,
       f.folder ? null : h('button', { class: 'icon-btn', title: 'Télécharger', 'aria-label': 'Télécharger', onclick: () => downloadOne(f) }, vi('download', 15)),
       info.editable ? h('button', { class: 'icon-btn', title: 'Renommer', 'aria-label': 'Renommer', onclick: () => rename(f) }, vi('pencil', 15)) : null,
