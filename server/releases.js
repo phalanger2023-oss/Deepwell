@@ -6,6 +6,16 @@
  */
 export const RELEASES = [
   {
+    version: '3.4.3', date: '2026-11-22',
+    nouveautes: [],
+    ameliorations: [
+      'Écran tactile (Chromebook, tablette) : dans le Kanban, on déplace une carte d’une colonne à l’autre en la gardant appuyée un instant (une courte vibration confirme), puis en la glissant avec le doigt ; le tableau défile tout seul quand on approche du bord. Un simple glissement du doigt fait toujours défiler le tableau, et un appui court ouvre la fiche.',
+    ],
+    corrections: [
+      'Kanban : le déplacement des cartes ne fonctionnait pas au doigt (le glisser-déposer du navigateur n’existe pas sur écran tactile).',
+    ],
+  },
+  {
     version: '3.4.2', date: '2026-11-22',
     nouveautes: [
       'Valeurs par défaut : le bouton « Par défaut » d’une base permet de choisir, pour chaque propriété (sélection, statut, multi-sélection, case à cocher, nombre, texte, URL, e-mail, téléphone), la valeur que reçoit toute nouvelle ligne. Par exemple « Statut » = « À faire » : chaque nouvelle ligne arrive dans cette colonne du Kanban. Ça marche pour « Nouvelle ligne », les modèles (la valeur du modèle passe avant) et les boutons d’automatisation ; « Nouvelle carte » dans une colonne du Kanban garde la colonne choisie.',

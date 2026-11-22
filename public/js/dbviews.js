@@ -331,12 +331,55 @@ function drawBoard(root, v, c) {
       h('div', { class: 'kb-cards' }, c.sorted(cards, v).map((r) => card(r))), addBtn);
     return col;
   }).filter(Boolean);
+  // Écran tactile (Chromebook…) : le glisser-déposer du navigateur ne marche pas au doigt. Appui long sur la carte (~0,3 s), puis on la glisse vers une colonne ;
+  // un simple glissement du doigt fait défiler le tableau comme d'habitude, un appui court ouvre la fiche.
+  function touchDrag(el, r) {
+    el.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      const t0 = e.touches[0]; let x = t0.clientX, y = t0.clientY, on = false, ghost = null, raf = 0, colEl = null;
+      el.draggable = false; // sinon Chrome lance son propre glisser-déposer (qui ne finit jamais au doigt)
+      const timer = setTimeout(() => {
+        on = true; navigator.vibrate?.(15); el.classList.add('dragging');
+        const b = el.getBoundingClientRect(); ghost = el.cloneNode(true); ghost.classList.add('kb-ghost'); ghost.style.cssText = `position:fixed;left:${b.left}px;top:${b.top}px;width:${b.width}px;z-index:300;pointer-events:none;opacity:.9;transform:rotate(2deg);box-shadow:0 8px 24px rgba(0,0,0,.25)`;
+        document.body.append(ghost); frame();
+      }, 300);
+      const frame = () => {
+        if (!on) return;
+        const b = el.getBoundingClientRect(); void b;
+        ghost.style.left = `${x - ghost.offsetWidth / 2}px`; ghost.style.top = `${y - 20}px`;
+        const rb = board.getBoundingClientRect(), edge = 70, sc = pageScroller().getBoundingClientRect();
+        const dx = x < rb.left + edge ? -speed(rb.left + edge - x, edge) : x > rb.right - edge ? speed(x - (rb.right - edge), edge) : 0;
+        const top = Math.max(sc.top, 0), bottom = Math.min(sc.bottom, innerHeight);
+        const dy = y < top + edge ? -speed(top + edge - y, edge) : y > bottom - edge ? speed(y - (bottom - edge), edge) : 0;
+        if (dx) board.scrollLeft += dx; if (dy) pageScroller().scrollTop += dy;
+        const under = document.elementFromPoint(x, y)?.closest('.kb-col') || null;
+        if (under !== colEl) { colEl?.classList.remove('over'); colEl = under; colEl?.classList.add('over'); }
+        raf = requestAnimationFrame(frame);
+      };
+      const move = (m) => {
+        const t = m.touches[0]; x = t.clientX; y = t.clientY;
+        if (!on) { if (Math.abs(x - t0.clientX) + Math.abs(y - t0.clientY) > 10) { clearTimeout(timer); end(false); } return; } // le doigt bouge avant l'appui long : c'est un défilement
+        if (m.cancelable) m.preventDefault();
+      };
+      const end = (drop, ev) => {
+        clearTimeout(timer); cancelAnimationFrame(raf);
+        el.removeEventListener('touchmove', move); el.removeEventListener('touchend', up); el.removeEventListener('touchcancel', cancel);
+        el.draggable = true; el.classList.remove('dragging'); ghost?.remove(); colEl?.classList.remove('over');
+        if (on && ev?.cancelable) ev.preventDefault(); // pas de « clic » après un glisser
+        if (on && drop && colEl) moveTo(r.id, colEl.dataset.key === '' ? null : colEl.dataset.key);
+      };
+      const up = (u) => end(true, u), cancel = (u) => end(false, u);
+      el.addEventListener('touchmove', move, { passive: false }); el.addEventListener('touchend', up); el.addEventListener('touchcancel', cancel);
+    }, { passive: true });
+    el.addEventListener('contextmenu', (e) => { if (e.sourceCapabilities?.firesTouchEvents || el.classList.contains('dragging')) e.preventDefault(); }); // l'appui long ne doit pas ouvrir le menu du navigateur
+  }
   function card(r) {
     const props = c.cardProps(v).filter((p) => p !== gp).map((p) => propBadge(schema[p], r.props?.[p])).filter(Boolean);
     const el = h('div', { class: 'kb-card', draggable: editable ? 'true' : null, onclick: () => c.open(r) },
       h('div', { class: 'kb-title' }, iconNode(r.icon, 16, 'file-text'), r.title || 'Sans titre'), props.length ? h('div', { class: 'kb-props' }, props) : null);
     el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/dw-row', r.id); e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); });
     el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    if (editable) touchDrag(el, r);
     return el;
   }
   const addGroup = editable ? h('button', { class: 'kb-newcol', onclick: async () => {

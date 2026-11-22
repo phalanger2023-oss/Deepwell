@@ -746,3 +746,5 @@ body.is-peek .cover + .page .page-icon { margin-top: -97px; }
 .ctx-menu { z-index: 110; } .ctx-menu.pop { z-index: 120; } /* les menus s’ouvrent au-dessus des fenêtres (ex. choix d’une valeur par défaut) */
 
 .kb-board { user-select: none; -webkit-user-select: none; } .kb-board input, .kb-board textarea { user-select: text; -webkit-user-select: text; } /* le Kanban se manipule à la souris : jamais de texte sélectionné en glissant */
+
+.kb-card { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; } .kb-card.dragging { opacity: .45; }
