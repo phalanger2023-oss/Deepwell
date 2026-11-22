@@ -1,0 +1,38 @@
+# DeepWell : même architecture que recettes-app (Docker Compose + Traefik + Let's Encrypt).
+# Prérequis sur le serveur : Traefik tourne déjà et le réseau Docker « traefik-public » existe.
+# Mode d'emploi complet : DEPLOIEMENT.md
+
+services:
+  deepwell:
+    build: .
+    container_name: deepwell
+    restart: unless-stopped
+    mem_limit: 384m                         # le VPS (4 Go) est partagé avec les autres applications
+    env_file: .env                          # réglages facultatifs (Google Drive, sauvegardes…)
+    environment:
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - PUBLIC_URL=https://${DEEPWELL_HOST:-deepwell.louisharicuisine.com}
+      - COOKIE_SECURE=1                     # le site n'est servi qu'en HTTPS
+      - TRUST_PROXY=1                       # derrière Traefik
+    volumes:
+      - deepwell_data:/app/data             # base, clé de chiffrement, fichiers, sauvegardes
+    networks:
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.deepwell.rule=Host(`${DEEPWELL_HOST:-deepwell.louisharicuisine.com}`)"
+      - "traefik.http.routers.deepwell.entrypoints=websecure"
+      - "traefik.http.routers.deepwell.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.deepwell.middlewares=security-headers@file"
+      - "traefik.http.services.deepwell.loadbalancer.server.port=3000"
+      # La connexion est gérée par DeepWell lui-même (le premier compte créé devient administrateur)
+
+networks:
+  traefik-public:
+    external: true
+
+volumes:
+  deepwell_data:
+    name: deepwell_data                     # nom fixe : facilite les sauvegardes
