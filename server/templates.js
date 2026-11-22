@@ -10,7 +10,8 @@ import { accessFor, can } from './access.js';
 const err = (message, status = 400) => Object.assign(new Error(message), { status });
 /** Ancienne page du recueil scolaire : créée avant le 22/11/2026 et pas encore modernisée (pastille jaune « À mettre à jour »). */
 const LEGACY_CUTOFF = Date.UTC(2026, 10, 22);
-export const isLegacyRow = (createdAt, props) => createdAt < LEGACY_CUTOFF && !props?.dw_arch;
+/** « todo » : carte marquée à la main comme « à mettre à jour » (mode développeur), même récente ; « done » : déjà mise à jour. */
+export const isLegacyRow = (createdAt, props) => props?.dw_arch === 'todo' || (createdAt < LEGACY_CUTOFF && !props?.dw_arch);
 const TIME_PROPS = new Set(['created_time', 'last_edited_time', 'created_by', 'last_edited_by', 'unique_id']); // recalculées pour chaque nouvelle ligne
 
 const rt = (text, ann = {}) => ({ type: 'text', text: { content: text, link: null }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default', ...ann }, plain_text: text, href: null });
@@ -213,6 +214,14 @@ export function templatesRoutes(router, { autoProps, defaultProps, schoolPageCha
       db.prepare('UPDATE pages SET props=?, updated_at=? WHERE id=?').run(JSON.stringify({ ...dprops, dw_arch_ref: { title: p.title, tree, at: now(), template_id: tplId }, dw_default_template: tplId }), now(), d.id);
     });
     res.json({ ok: true, blocks: list.length, kept: JSON.stringify(tree).split('"type"').length - 1, template_id: tplId });
+  });
+  /** Mode développeur : « Marquer comme à mettre à jour » (remet la pastille et le bouton sur une carte, même récente). */
+  router.post('/:id/modernize/unmark', requireAuth, (req, res) => {
+    if (getSetting('dev_mode', '0') !== '1') throw err('Cette action nécessite le mode développeur (Réglages → Développeur).', 403);
+    const { p, d } = legacyRow(req, req.params.id, 'edit');
+    if (!d) throw err('Cette page n’appartient pas à une base scolaire.', 409);
+    db.prepare('UPDATE pages SET props=?, updated_at=? WHERE id=?').run(JSON.stringify({ ...(parse(p.props, {}) || {}), dw_arch: 'todo' }), now(), p.id);
+    res.json({ ok: true });
   });
   /** Mode développeur : « Marquer comme modifiée » (retire la pastille et le bouton sans toucher au contenu). */
   router.post('/:id/modernize/mark', requireAuth, (req, res) => {

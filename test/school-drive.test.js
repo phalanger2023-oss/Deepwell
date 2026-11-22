@@ -235,6 +235,10 @@ test('PDM : clé vérifiée, PDF de référence déposé dans année / matière 
   assert.equal((await api('GET', `/api/school/pages/${add.id}`)).body.pdm, false);
   // version annotée (ex. faite sur Canva) : rangée à côté de l'original vierge, nommée « … (annoté) », déposée dans PDM comme document à part
   const annId = addF({ name: 'canva-export.pdf', mimeType: 'application/pdf', parents: [s1.folder_id], size: '500' });
+  assert.equal((await api('POST', `/api/school/pages/${ctx.s1}/files`, { drive_id: annId, annotates: saved.id })).status, 409, 'chapitre récent : pas de version annotée');
+  assert.equal((await api('GET', `/api/school/pages/${ctx.s1}`)).body.legacy, false);
+  DB.db.prepare('UPDATE pages SET props=? WHERE id=?').run(JSON.stringify({ ...JSON.parse(DB.db.prepare('SELECT props FROM pages WHERE id=?').get(ctx.s1).props), dw_arch: 'todo' }), ctx.s1); // « à mettre à jour »
+  assert.equal((await api('GET', `/api/school/pages/${ctx.s1}`)).body.legacy, true);
   assert.equal((await api('POST', `/api/school/pages/${ctx.s1}/files`, { drive_id: annId, annotates: 'inconnu' })).status, 404, 'original inconnu refusé');
   const ann = (await api('POST', `/api/school/pages/${ctx.s1}/files`, { drive_id: annId, annotates: saved.id })).body;
   assert.equal(ann.annotates, saved.id); assert.equal(ann.name, 'cours (annoté).pdf');
@@ -244,6 +248,8 @@ test('PDM : clé vérifiée, PDF de référence déposé dans année / matière 
   const again = addF({ name: 'deuxieme.pdf', mimeType: 'application/pdf', parents: [s1.folder_id] });
   assert.equal((await api('POST', `/api/school/pages/${ctx.s1}/files`, { drive_id: again, annotates: saved.id })).status, 409, 'une seule version annotée par original');
   assert.ok(!(await api('GET', `/api/school/pages/${ctx.s1}`)).body.files.some((x) => x.name === 'deuxieme.pdf'), 'refus : rien n’est enregistré');
+  DB.db.prepare('UPDATE pages SET props=? WHERE id=?').run(JSON.stringify({ ...JSON.parse(DB.db.prepare('SELECT props FROM pages WHERE id=?').get(ctx.s1).props), dw_arch: 'done' }), ctx.s1); // mise à jour faite
+  assert.equal((await api('GET', `/api/school/pages/${ctx.s1}`)).body.legacy, false, 'plus d’option une fois la carte à jour');
   // option désactivée : plus rien n'est déposé
   await api('PATCH', `/api/pages/${ctx.db}`, { props: { dw_school: { enabled: true, options: { drive: true } } } });
   await api('DELETE', `/api/school/files/${ann.id}`);

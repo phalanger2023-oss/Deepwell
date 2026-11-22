@@ -19,6 +19,7 @@ import { accessToken, hasDrive } from './drive.js';
 import { enqueueJob, registerJob, runDueJobs } from './jobs.js';
 import { pdmConfig, pdmUpload, pdmLinks } from './pdm.js';
 import { blocksToMarkdown } from './addendum-md.js';
+import { isLegacyRow } from './templates.js';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS school_dirs(user_id TEXT NOT NULL, key TEXT NOT NULL, drive_id TEXT NOT NULL, PRIMARY KEY(user_id, key));
@@ -390,7 +391,8 @@ schoolRouter.get('/pages/:id', wrap(async (req, res) => {
     const rows = new Map(db.prepare('SELECT * FROM school_pdm WHERE page_id=?').all(req.params.id).map((r) => [r.file_id, r]));
     for (const f of files) { const r = rows.get(f.id); if (r) f.pdm = pdmLinks(pcfg, r.pdm_name); else if (isPdf(f)) f.pdm_pending = true; }
   }
-  const out = { applicable: true, is_addendum: ctx.isAddendum, support_id: ctx.support.id, drive_connected: hasDrive(req.user.id), folder: !!folder, files, editable: can(role, 'edit'), pdm: !!pcfg && !ctx.isAddendum };
+  const sup = db.prepare('SELECT created_at,props FROM pages WHERE id=?').get(req.params.id);
+  const out = { applicable: true, legacy: !ctx.isAddendum && isLegacyRow(sup.created_at, parse(sup.props, {})), is_addendum: ctx.isAddendum, support_id: ctx.support.id, drive_connected: hasDrive(req.user.id), folder: !!folder, files, editable: can(role, 'edit'), pdm: !!pcfg && !ctx.isAddendum };
   if (!ctx.isAddendum) { // « Tout télécharger » : fichiers du support et de ses addendums
     out.all_files = db.prepare(`SELECT f.*, p.title AS page_title FROM school_files f JOIN pages p ON p.id=f.page_id WHERE f.page_id IN (${descendants(ctx.support.id).map(() => '?').join(',')}) ORDER BY f.created_at`)
       .all(...descendants(ctx.support.id)).filter((f) => f.mime !== FOLDER).map((f) => ({ ...fileRow(f), where: f.page_id === ctx.support.id ? '' : `Addenda/${cleanName(f.page_title, 'Addendum')}` }));
@@ -425,6 +427,8 @@ schoolRouter.post('/pages/:id/files', wrap(async (req, res) => {
   const token = await accessToken(req.user.id), row = await ensureSupportFolder(req.user.id, ctx, token), target = await targetFolder(token, ctx, row, req.params.id, req.user.id);
   const f = await dcall(token, 'GET', `${API}/files/${driveId}?fields=id,name,mimeType,size,parents,trashed`);
   if (f.trashed || !f.parents?.includes(target)) throw err('Ce fichier n’est pas dans le dossier du chapitre.', 409);
+  const supRow = db.prepare('SELECT created_at,props FROM pages WHERE id=?').get(req.params.id);
+  if (req.body?.annotates && (ctx.isAddendum || !isLegacyRow(supRow.created_at, parse(supRow.props, {})))) throw err('La version annotée n’est proposée que pour les documents à mettre à jour.', 409);
   const orig = req.body?.annotates ? db.prepare('SELECT * FROM school_files WHERE id=? AND page_id=?').get(String(req.body.annotates), req.params.id) : null;
   if (req.body?.annotates) { // version annotée d'un PDF d'origine : l'original reste vierge, l'annotée est rangée à côté et déposée dans PDM
     if (!orig || !isPdf(orig) || orig.annotates) throw err('Le document d’origine est introuvable (ou n’est pas un PDF).', 404);

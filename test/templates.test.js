@@ -200,3 +200,17 @@ test('architecture de référence : capture réservée au mode développeur, rec
   assert.ok(idx('À classer') > idx('Lié à la P.S.A.') && by('Note orpheline'), 'le reste en bas sous « À classer »');
   assert.equal(got.filter((b) => b.type === 'button').length, 1, 'un seul bouton (celui de la référence)');
 });
+
+test('mode développeur : « Marquer comme à mettre à jour » remet la pastille sur une carte récente', async () => {
+  const d = (await api('POST', '/api/pages', { title: 'Recueil unmark', kind: 'database' })).body;
+  await api('PATCH', `/api/pages/${d.id}`, { schema: { Name: { id: 'title', name: 'Name', type: 'title', title: {} } }, props: { dw_school: { enabled: true, options: {} } } });
+  const c = (await api('POST', '/api/pages', { title: 'Récente', parent_id: d.id })).body;
+  const DB = await import('../server/db.js');
+  DB.setSetting('dev_mode', '0'); assert.equal((await api('POST', `/api/pages/${c.id}/modernize/unmark`)).status, 403);
+  DB.setSetting('dev_mode', '1');
+  assert.equal((await api('GET', `/api/pages/${c.id}/modernize`)).body.legacy, false);
+  assert.equal((await api('POST', `/api/pages/${c.id}/modernize/unmark`)).status, 200);
+  assert.equal((await api('GET', `/api/pages/${c.id}/modernize`)).body.legacy, true);
+  assert.equal((await api('GET', `/api/pages/${d.id}`)).body.children.find((k) => k.id === c.id).legacy, true, 'pastille dans les vues');
+  await api('POST', `/api/pages/${c.id}/modernize/mark`); assert.equal((await api('GET', `/api/pages/${c.id}/modernize`)).body.legacy, false);
+});

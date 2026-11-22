@@ -901,6 +901,7 @@ function pageMenu(anchor, page, role, editable) {
     items.push({ label: page.cover ? 'Changer la couverture' : 'Ajouter une couverture', icon: 'image-plus', fn: () => coverDialog(page) });
   }
   if (editable && S.settings.dev_mode === '1' && S.pageMap?.get(page.parent_id)?.kind === 'database') {
+    items.push({ label: 'Marquer comme à mettre à jour', icon: 'refresh-cw', fn: async () => { try { await api.post(`/api/pages/${page.id}/modernize/unmark`); toast('Carte marquée « à mettre à jour »'); showPage(page.id); } catch (e) { toast(e.message, 'error'); } } });
     items.push({ label: 'Définir comme architecture de référence', icon: 'layout-template', fn: async () => {
       if (!await confirmBox('Utiliser la structure de cette page (titres, blocs déroulants, séparateurs, boutons) comme modèle pour « Mettre à jour cette page » sur toutes les anciennes pages de cette base ?', 'Définir')) return;
       try { const r = await api.post(`/api/pages/${page.id}/arch-reference`); toast(`Architecture de référence enregistrée (${r.kept} blocs de structure)`); } catch (e) { toast(e.message, 'error'); }
