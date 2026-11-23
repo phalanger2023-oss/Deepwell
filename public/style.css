@@ -896,4 +896,3 @@ body.is-peek .props { gap: 6px; }
 .pi-dev { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; } .pi-dev summary { cursor: pointer; }
 .pi-num { width: 84px; }
 .credit-line { margin: 6px 0; } .credit-quote { margin: 14px 0 4px; padding: 6px 14px; border-left: 3px solid var(--border); font-style: italic; } .credit-quote footer { font-style: normal; margin-top: 4px; } .credit-row input { flex: 1 1 140px; }
-.pi-chunk.given { opacity: .5; }

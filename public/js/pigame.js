@@ -36,7 +36,7 @@ export async function tabPi(p, { section, local = false, dev = false, publicToke
   const st = store(local);
   const MAX = 1000;
   const PI = piDigits(MAX);
-  const state = { mode: 'recall', lives: 0, target: 50, chunk: 5, shown: 20, given: 0 };
+  const state = { mode: 'recall', lives: 0, target: 50, chunk: 5, shown: 20 };
   const play = h('div', { class: 'pi-play' }), hist = h('div', {});
   const tabs = h('div', { class: 'pi-tabs' });
   const setMode = (m) => { state.mode = m; drawTabs(); drawPlay(); };
@@ -71,19 +71,18 @@ export async function tabPi(p, { section, local = false, dev = false, publicToke
   let focusInput = null; // le clavier de saisie (champ caché) de la partie en cours
   play.addEventListener('click', (e) => { if (state.mode === 'recall' && focusInput && !e.target.closest('select, option, label, button, a, input')) focusInput(); }); // jamais en cliquant sur un menu : ça le refermait aussitôt
   const drawRecall = () => {
-    const given = Math.max(0, Math.min(state.given, state.target - 1)); // décimales montrées au départ (jamais l'objectif entier) ; seules les suivantes comptent
-    let idx = given, errs = 0, t0 = 0, over = false;
+    let idx = 0, errs = 0, t0 = 0, over = false;
     const typed = h('div', { class: 'pi-digits pi-typed' }), msg = h('div', { class: 'pi-msg' }), stat = h('div', { class: 'muted small' });
     const input = h('input', { class: 'pi-hidden', inputmode: 'numeric', autocomplete: 'off', 'aria-label': 'Décimales de π' });
     const paint = (miss) => {
-      typed.replaceChildren(h('span', { class: 'pi-int' }, '3,'), ...group(PI.slice(0, given), 5).map((c) => h('span', { class: 'pi-chunk given' }, c)), ...group(PI.slice(given, idx), 5).map((c) => h('span', { class: 'pi-chunk ok' }, c)), miss ? h('span', { class: 'pi-chunk bad' }, miss) : h('span', { class: 'pi-cursor' }, '▍'));
-      stat.textContent = `${idx - given} / ${state.target - given} décimales · ${errs} erreur(s)${state.lives ? ` sur ${state.lives}` : ''}`;
+      typed.replaceChildren(h('span', { class: 'pi-int' }, '3,'), ...group(PI.slice(0, idx), 5).map((c) => h('span', { class: 'pi-chunk ok' }, c)), miss ? h('span', { class: 'pi-chunk bad' }, miss) : h('span', { class: 'pi-cursor' }, '▍'));
+      stat.textContent = `${idx} / ${state.target} décimales · ${errs} erreur(s)${state.lives ? ` sur ${state.lives}` : ''}`;
     };
     const finish = async (won) => {
       over = true; const secs = t0 ? (Date.now() - t0) / 1000 : 0;
       msg.className = `pi-msg ${won ? 'win' : 'lose'}`;
-      msg.replaceChildren(won ? `Bravo ! ${state.target - given} décimales sans faute en ${fmtT(secs)}.` : `Terminé : ${idx - given} décimale(s) juste(s) en ${fmtT(secs)}. La suivante était ${PI[idx]}.`, ' ', h('button', { class: 'btn', onclick: drawRecall }, 'Rejouer'));
-      await save({ mode: 'recall', digits: idx - given, target: state.target - given, seconds: secs, errors: errs }); // seules les décimales récitées comptent, pas celles données au départ
+      msg.replaceChildren(won ? `Bravo ! ${state.target} décimales sans faute en ${fmtT(secs)}.` : `Terminé : ${idx} décimale(s) juste(s) en ${fmtT(secs)}. La suivante était ${PI[idx]}.`, ' ', h('button', { class: 'btn', onclick: drawRecall }, 'Rejouer'));
+      await save({ mode: 'recall', digits: idx, target: state.target, seconds: secs, errors: errs });
     };
     const press = (d) => {
       if (over) return;
@@ -104,8 +103,6 @@ export async function tabPi(p, { section, local = false, dev = false, publicToke
       h('div', { class: 'pi-row' },
         h('label', {}, 'Objectif ', sel([...new Set([10, 20, 30, 50, 100, 200, 500, 1000, state.target])].sort((a, b) => a - b).map((v) => [v, `${v} décimales`]), state.target, (v) => { state.target = v; drawRecall(); }),
           ' ou ', numBox(state.target, 1, MAX, (v) => { state.target = v; drawRecall(); }), ` (1 à ${MAX})`),
-        h('label', {}, 'Décimales données au départ ', sel([...new Set([0, 5, 10, 20, state.given])].sort((a, b) => a - b).map((v) => [v, v === 0 ? 'aucune' : `${v}`]), state.given, (v) => { state.given = v; drawRecall(); }),
-          ' ou ', numBox(state.given, 0, MAX - 1, (v) => { state.given = v; drawRecall(); })),
         h('label', {}, 'Droit à l’erreur ', sel([...new Set([0, 1, 3, state.lives])].sort((a, b) => a - b).map((v) => [v, v === 0 ? 'aucune (parfait)' : `${v} erreur${v > 1 ? 's' : ''}`]), state.lives, (v) => { state.lives = v; drawRecall(); }),
           ' ou ', numBox(state.lives, 0, 100, (v) => { state.lives = v; drawRecall(); }))),
       h('p', { class: 'muted' }, 'Tapez les décimales de π de mémoire (après « 3, »). Le chronomètre démarre à la première touche.'),
