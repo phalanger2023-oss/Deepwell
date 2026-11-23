@@ -868,3 +868,20 @@ body.guest-preview .sidebar, body.guest-preview .sb-toggle { display: none !impo
 .sb-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
 .sb-over-bottom { box-shadow: 0 2px 0 0 var(--accent); }
 .sb-actions .si-btn { cursor: grab; }
+
+/* propriétés d'une ligne (page, aperçu latéral) : la valeur est toujours à côté du nom ; case à cocher alignée à gauche, comme les autres valeurs */
+.prop > input[type=checkbox] { justify-self: start; width: 18px; height: 18px; margin: 6px 6px; accent-color: var(--accent); cursor: pointer; }
+.prop > input[type=checkbox]:disabled { cursor: default; opacity: .7; }
+.prop > * { min-width: 0; }
+.prop .prop-label { min-height: 30px; }
+
+/* calendrier : cases plus grandes, texte plus lisible (le titre de chaque élément passe sur deux lignes au lieu d'être coupé) */
+.cal-cell { min-height: 150px; padding: 6px 7px; gap: 4px; }
+.cal-num { font-size: .95em; }
+.cal-dow { font-size: .9em; padding: 8px; }
+.cal-item { font-size: .88em; line-height: 1.4; padding: 3px 7px; align-items: flex-start; }
+.cal-item > span, .cal-item .cal-t { white-space: normal; overflow-wrap: break-word; hyphens: auto; }
+.cal-props { font-size: .88em; }
+.cal-ex { font-size: .88em; -webkit-line-clamp: 3; }
+@media (max-width: 700px) { .cal-cell { min-height: 110px; padding: 4px; } .cal-item { font-size: .85em; } }
+.cal-item > span { flex: 1 1 0; min-width: 0; } .cal-item > :first-child { flex: none; margin-top: 2px; }

@@ -159,8 +159,13 @@ async function ensureAddendumDir0(token, userId, ctx, row, pageId) {
   const parent = await ensureAddenda(token, row);
   let a = db.prepare('SELECT * FROM school_addenda WHERE page_id=?').get(pageId);
   if (a) {
-    try { const f = await dcall(token, 'GET', `${API}/files/${a.drive_id}?fields=id,trashed`); if (!f.trashed) return a; }
-    catch (e) { if (e.drive !== 404) throw e; }
+    try {
+      const f = await dcall(token, 'GET', `${API}/files/${a.drive_id}?fields=id,trashed,parents`);
+      if (!f.trashed) { // dossier d'addendum rangé ailleurs (ancienne organisation) : remis dans « Registre des addenda »
+        if (!f.parents?.includes(parent)) await dcall(token, 'PATCH', `${API}/files/${a.drive_id}?fields=id&addParents=${parent}${f.parents?.length ? `&removeParents=${f.parents.join(',')}` : ''}`, {});
+        return a;
+      }
+    } catch (e) { if (e.drive !== 404) throw e; }
     db.prepare('DELETE FROM school_addenda WHERE page_id=?').run(pageId); // dossier supprimé sur Drive : on le recrée
   }
   const title = cleanName(db.prepare('SELECT title FROM pages WHERE id=?').get(pageId)?.title, 'Addendum');
@@ -237,6 +242,35 @@ async function RUN_DEDUPE(token, userId, pageId) {
     db.prepare('DELETE FROM school_files WHERE id=?').run(f.id);
   }
 }
+/** Doublons réels sur Drive (même nom + même contenu) dans un dossier : le plus ancien reste, les autres vont à la corbeille. Dossiers de même nom : fusionnés dans le plus ancien. Renvoie le nombre de retraits. */
+async function driveDedupe(token, folderId, depth = 0) {
+  let n = 0, list = [], pageToken = '';
+  do {
+    const r = await dcall(token, 'GET', `${API}/files?q=${encodeURIComponent(`'${folderId}' in parents and trashed=false`)}&fields=nextPageToken,files(id,name,mimeType,size,md5Checksum,createdTime)&pageSize=200&orderBy=createdTime${pageToken ? `&pageToken=${pageToken}` : ''}`);
+    list = list.concat(r.files || []); pageToken = r.nextPageToken || '';
+  } while (pageToken);
+  const seen = new Map(), dirs = new Map();
+  for (const f of list) {
+    if (f.mimeType === FOLDER) {
+      const k = f.name.toLowerCase().trim();
+      if (!dirs.has(k)) { dirs.set(k, f); continue; }
+      const keep = dirs.get(k); // même nom : on range le contenu dans le plus ancien puis on retire le doublon
+      const kids = await dcall(token, 'GET', `${API}/files?q=${encodeURIComponent(`'${f.id}' in parents and trashed=false`)}&fields=files(id)&pageSize=200`);
+      for (const c of kids.files || []) await dcall(token, 'PATCH', `${API}/files/${c.id}?fields=id&addParents=${keep.id}&removeParents=${f.id}`, {});
+      await dcall(token, 'PATCH', `${API}/files/${f.id}?fields=id`, { trashed: true }); n++;
+      db.prepare('UPDATE school_folders SET drive_id=? WHERE drive_id=?').run(keep.id, f.id); db.prepare('UPDATE school_folders SET main_id=? WHERE main_id=?').run(keep.id, f.id); db.prepare('UPDATE school_folders SET addenda_id=? WHERE addenda_id=?').run(keep.id, f.id); db.prepare('UPDATE school_addenda SET drive_id=? WHERE drive_id=?').run(keep.id, f.id);
+      continue;
+    }
+    const k = `${f.name.toLowerCase().trim()}|${f.md5Checksum || f.size || ''}`;
+    if (!f.md5Checksum && !f.size) continue; // document Google natif : pas de contenu comparable
+    if (!seen.has(k)) { seen.set(k, f); continue; }
+    await dcall(token, 'PATCH', `${API}/files/${f.id}?fields=id`, { trashed: true }); n++;
+    db.prepare('UPDATE school_files SET drive_id=? WHERE drive_id=? AND NOT EXISTS (SELECT 1 FROM school_files x WHERE x.drive_id=? AND x.page_id=school_files.page_id)').run(seen.get(k).id, f.id, seen.get(k).id);
+    db.prepare('DELETE FROM school_files WHERE drive_id=?').run(f.id);
+  }
+  if (depth < 3) for (const d of dirs.values()) n += await driveDedupe(token, d.id, depth + 1);
+  return n;
+}
 const RUN = {
   async 'school.ensure_folder'({ page_id, user_id }) {
     const ctx = schoolContext(page_id);
@@ -264,11 +298,11 @@ const RUN = {
     const buffer = Buffer.from(await r.arrayBuffer());
     if (buffer.length > 95 * 1024 * 1024) throw Object.assign(err('PDF trop gros pour PDM (95 Mo maximum).'), { fatal: true });
     const folder = [cleanName(ctx.db.title, 'Sans titre'), subjectOf(ctx.db, ctx.support), cleanName(ctx.support.title, 'Sans titre'),
-      ...(ctx.isAddendum ? ['Addenda', cleanName(db.prepare('SELECT title FROM pages WHERE id=?').get(f.page_id)?.title, 'Addendum')] : [])].join('/');
+      ...(ctx.isAddendum ? [ADDENDA_NAME, cleanName(db.prepare('SELECT title FROM pages WHERE id=?').get(f.page_id)?.title, 'Addendum')] : [])].join('/');
     const out = await pdmUpload(cfg, { buffer, filename: /\.pdf$/i.test(f.name) ? f.name : `${f.name}.pdf`, folder, source: `deepwell:${f.id}` });
     db.prepare('INSERT OR REPLACE INTO school_pdm(file_id,page_id,pdm_name,folder,created_at) VALUES(?,?,?,?,?)').run(f.id, f.page_id, out.name, folder, now());
   },
-  /** Addendum : dossier Addenda/<titre> à jour (nom, fichiers déjà envoyés rangés dedans) + résumé écrit <titre>.md, remis à jour si le contenu a changé. */
+  /** Addendum : dossier Addenda/<titre> à jour (nom, fichiers déjà envoyés rangés dedans) + petit fichier texte <titre>.txt, remis à jour si le contenu a changé. */
   async 'school.addendum_sync'({ page_id, user_id }) {
     const ctx = schoolContext(page_id);
     if (!ctx?.drive || !ctx.isAddendum || ctx.cfg.options?.addendum_doc === false) return;
@@ -292,16 +326,16 @@ const RUN = {
     }
     // résumé écrit
     const blocks = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(page_id);
-    const md = blocksToMarkdown(title, blocks), hash = crypto.createHash('sha1').update(`${a.name}\n${md}`).digest('hex');
-    const docName = `${cleanName(title, 'Addendum')}.md`;
+    const md = blocksToMarkdown(title, blocks), docName = `${cleanName(title, 'Addendum')}.txt`; // petit fichier texte qui décrit l'addendum
+    const hash = crypto.createHash('sha1').update(`${a.name}\n${docName}\n${md}`).digest('hex');
     if (a.doc_id && a.doc_hash === hash) return;
     const buf = Buffer.from(md, 'utf8');
     if (a.doc_id) {
-      const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${a.doc_id}?uploadType=media&fields=id`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'text/markdown; charset=UTF-8' }, body: buf });
+      const r = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${a.doc_id}?uploadType=media&fields=id`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'text/plain; charset=UTF-8' }, body: buf });
       if (r.status === 404) { a.doc_id = null; } else if (!r.ok) throw err(`Google Drive : ${r.status}`, 502, { drive: r.status });
-      else await dcall(token, 'PATCH', `${API}/files/${a.doc_id}?fields=id`, { name: docName });
+      else await dcall(token, 'PATCH', `${API}/files/${a.doc_id}?fields=id`, { name: docName, mimeType: 'text/plain' });
     }
-    if (!a.doc_id) a.doc_id = (await uploadBuffer(token, a.drive_id, docName, 'text/markdown', buf)).id;
+    if (!a.doc_id) a.doc_id = (await uploadBuffer(token, a.drive_id, docName, 'text/plain', buf)).id;
     db.prepare('UPDATE school_addenda SET doc_id=?, doc_hash=? WHERE page_id=?').run(a.doc_id, hash, page_id);
   },
   /** Réorganisation d'un support : dossier déplacé vers Matière / Support, dossier des addenda renommé « Registre des addenda », fichiers en double retirés. */
@@ -318,6 +352,9 @@ const RUN = {
       db.prepare('UPDATE school_folders SET addenda_name=? WHERE page_id=?').run(ADDENDA_NAME, page_id);
     }
     for (const pid of descendants(page_id)) await RUN_DEDUPE(token, user_id, pid);
+    for (const pid of descendants(page_id)) { if (pid !== page_id) await RUN['school.addendum_sync']({ page_id: pid, user_id }); } // dossier de chaque addendum : nom de la page, rangé dans « Registre des addenda », avec son petit fichier texte
+    await driveDedupe(token, db.prepare('SELECT drive_id FROM school_folders WHERE page_id=?').get(page_id).drive_id);
+    for (const pid of descendants(page_id)) queuePdm(pid, user_id); // PDF du chapitre et des addenda : déposés dans PDM (modifiables là-bas)
   },
   async 'school.trash'({ user_id, drive_id }) {
     try { await dcall(await accessToken(user_id), 'PATCH', `${API}/files/${drive_id}?fields=id`, { trashed: true }); }
@@ -579,7 +616,7 @@ function reorgPlan(req, databaseId) {
     const subject = subjectOf(dbp, r), cached = db.prepare('SELECT drive_id FROM school_dirs WHERE user_id=? AND key=?').get(f.user_id, `subj:${subject}`);
     const duplicates = descendants(r.id).reduce((n, pid) => n + duplicateFiles(pid).length, 0);
     const move = !cached || f.parent_id !== cached.drive_id, rename = !!f.addenda_id && f.addenda_name !== ADDENDA_NAME;
-    if (move || rename || duplicates) supports.push({ id: r.id, title: cleanName(r.title, 'Sans titre'), from: 'ancienne organisation (si Année / Matière / …)', to: `${ROOT_NAME} / ${subject} / ${cleanName(r.title, 'Sans titre')}`, move, rename_addenda: rename, duplicates });
+    supports.push({ id: r.id, title: cleanName(r.title, 'Sans titre'), from: 'ancienne organisation (si Année / Matière / …)', to: `${ROOT_NAME} / ${subject} / ${cleanName(r.title, 'Sans titre')}`, move, rename_addenda: rename, duplicates });
   }
   return { database_id: databaseId, supports, totals: { supports: supports.length, moves: supports.filter((s) => s.move).length, renames: supports.filter((s) => s.rename_addenda).length, duplicates: supports.reduce((n, s) => n + s.duplicates, 0) } };
 }

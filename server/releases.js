@@ -8,6 +8,10 @@ export const RELEASES = [
   {
     version: '3.5.0', date: '2026-11-23',
     nouveautes: [
+      'Drive des addenda : chaque addendum a son dossier (au nom exact de sa page) dans « Registre des addenda », avec un petit fichier texte (.txt) qui décrit son contenu. « Réorganiser les dossiers Drive… » range maintenant aussi les anciens dossiers d’addenda, renomme les descriptions, et retire les doublons réels présents sur Drive (même nom, même contenu) en plus de ceux connus de DeepWell, à la corbeille de Drive (récupérables).',
+      'Les PDF des addenda sont déposés dans PDM (bouton « Éditer dans PDM »), comme les documents des matières, y compris ceux déjà présents lors de la réorganisation.',
+      'Aperçu latéral et fiches de base : la valeur d’une propriété est toujours à côté de son nom (les cases à cocher n’étaient plus décalées vers la droite).',
+      'Calendrier : cases plus hautes, texte plus grand, titres sur plusieurs lignes au lieu d’être coupés.',
       'Mode téléphone : panneau latéral qui se glisse par-dessus, boutons plus grands, menus en bas de l’écran, colonnes empilées, texte sans zoom. Automatique sur écran étroit ou tactile ; réglable dans Réglages → Apparence → « Mode téléphone ».',
       'Aperçu invité : menu ⋯ d’une page → « Aperçu invité (lecture seule) » pour voir la page comme quelqu’un qui n’a que la lecture (sans panneau latéral ni boutons de partage), puis « Quitter l’aperçu ».',
       'Réglages → Serveur (administrateur) : état du serveur en direct (processeur, mémoire, disque, base de données, requêtes, tâches, dernière sauvegarde), ping mesuré depuis votre appareil (moyenne, gigue) et performances de l’appareil (fluidité, vitesse, réseau).',

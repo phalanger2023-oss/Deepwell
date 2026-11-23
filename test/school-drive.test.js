@@ -41,6 +41,7 @@ globalThis.fetch = async (url, opts = {}) => {
   }
   if (p === '/drive/v3/files' && m === 'GET') {
     const q = url2.searchParams.get('q') || '', name = /name='((?:[^'\\]|\\.)*)'/.exec(q)?.[1].replace(/\\'/g, "'"), parent = /'([^']+)' in parents/.exec(q)?.[1];
+    if (!name && parent) return J({ files: [...F.values()].filter((f) => !f.trashed && f.parents.includes(parent)).map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType, size: f.size })) });
     return J({ files: [...F.values()].filter((f) => f.name === name && f.mimeType.endsWith('folder') && !f.trashed && f.parents.includes(parent)).map((f) => ({ id: f.id })) });
   }
   if (p === '/drive/v3/files' && m === 'POST') { const b = JSON.parse(opts.body); return J({ id: addF({ name: b.name, mimeType: b.mimeType, parents: b.parents || ['root'] }) }); }
@@ -231,7 +232,7 @@ test('PDM : clé vérifiée, PDF de référence déposé dans année / matière 
   const add = (await api('POST', '/api/pages', { title: 'Addendum', parent_id: ctx.s1 })).body;
   const sa = (await api('POST', `/api/school/pages/${add.id}/upload-session`)).body;
   await api('POST', `/api/school/pages/${add.id}/files`, { drive_id: addF({ name: 'annexe.pdf', mimeType: 'application/pdf', parents: [sa.folder_id] }) }); await settle();
-  assert.equal(PDM.docs.length, 2); assert.equal(PDM.docs[1].folder, 'Recueil 5A6 (2026-2027)/Histoire/P.S.A. #0001-FR (revu)/Addenda/Addendum');
+  assert.equal(PDM.docs.length, 2); assert.equal(PDM.docs[1].folder, 'Recueil 5A6 (2026-2027)/Histoire/P.S.A. #0001-FR (revu)/Registre des addenda/Addendum');
   const addInfo = (await api('GET', `/api/school/pages/${add.id}`)).body; assert.equal(addInfo.pdm, true); assert.ok(addInfo.files[0].pdm.url.includes('annexe.pdf'));
   // version annotée (ex. faite sur Canva) : rangée à côté de l'original vierge, nommée « … (annoté) », déposée dans PDM comme document à part
   const annId = addF({ name: 'canva-export.pdf', mimeType: 'application/pdf', parents: [s1.folder_id], size: '500' });
@@ -257,7 +258,7 @@ test('PDM : clé vérifiée, PDF de référence déposé dans année / matière 
   assert.equal(PDM.docs.length, 3);
 });
 
-test('addenda : un dossier par addendum (nom de la page) avec ses fichiers et un résumé .md, rattrapage des anciens, renommage', async () => {
+test('addenda : un dossier par addendum (nom de la page) avec ses fichiers et un petit fichier .txt, rattrapage des anciens, renommage', async () => {
   const add = (await api('POST', '/api/pages', { title: 'Addendum 00', parent_id: ctx.s1 })).body;
   await api('PUT', `/api/pages/${add.id}/blocks`, { blocks: [
     { id: 'h1', parent_id: null, type: 'heading_2', content: { rich_text: [{ type: 'text', text: { content: 'Verbes' }, plain_text: 'Verbes', annotations: {} }] } },
@@ -272,14 +273,14 @@ test('addenda : un dossier par addendum (nom de la page) avec ses fichiers et un
   const dirs = [...F.values()].filter((f) => f.name === 'Addendum 00' && f.mimeType.endsWith('folder'));
   assert.equal(dirs.length, 1); assert.equal(pathOf(dirs[0].id), 'DeepWell Cours / Histoire / P.S.A. #0001-FR (revu) / Registre des addenda / Addendum 00'.replace('Histoire / P.S.A. #0001-FR (revu)', pathOf(frow.drive_id).split(' / ').slice(1).join(' / ')));
   assert.deepEqual(F.get(old).parents, [dirs[0].id], 'ancien fichier rangé dans le dossier de son addendum');
-  const doc = [...F.values()].find((f) => f.name === 'Addendum 00.md' && f.parents.includes(dirs[0].id));
+  const doc = [...F.values()].find((f) => f.name === 'Addendum 00.txt' && f.parents.includes(dirs[0].id));
   assert.ok(doc, 'résumé écrit présent'); assert.match(doc.content, /^# Addendum 00\n\n## Verbes\n\*\*Chanter\*\*\n$/);
   // idempotent + mise à jour du contenu + renommage
   const n = F.size; await api('POST', `/api/pages/${ctx.db}/architecture`, { dry: false }); await settle(); assert.equal(F.size, n, 'rien de dupliqué');
   await api('PUT', `/api/pages/${add.id}/blocks`, { blocks: [{ id: 'p1', parent_id: null, type: 'paragraph', content: { rich_text: [{ type: 'text', text: { content: 'Finir' }, plain_text: 'Finir', annotations: {} }] } }] }); await settle();
   assert.match(doc.content, /Finir/); assert.doesNotMatch(doc.content, /Chanter/);
   await api('PATCH', `/api/pages/${add.id}`, { title: 'Addendum 01' }); await settle();
-  assert.equal(F.get(dirs[0].id).name, 'Addendum 01'); assert.equal(doc.name, 'Addendum 01.md');
+  assert.equal(F.get(dirs[0].id).name, 'Addendum 01'); assert.equal(doc.name, 'Addendum 01.txt');
   // nouveau fichier joint : va dans le dossier de l'addendum
   assert.equal(pathOf((await api('POST', `/api/school/pages/${add.id}/upload-session`)).body.folder_id).split(' / ').slice(-2).join(' / '), 'Registre des addenda / Addendum 01');
 });
@@ -347,13 +348,18 @@ test('réorganisation : essai à blanc sans effet, puis supports déplacés, « 
   assert.ok(mine.move && mine.rename_addenda && mine.duplicates === 1); assert.equal(mine.to, 'DeepWell Cours / Latin / Ancien rangement');
   assert.equal(JSON.stringify([...F.values()].map((f) => [f.id, f.name, f.parents, f.trashed])), before, 'l’essai à blanc ne touche pas à Drive');
   assert.equal(DB.db.prepare('SELECT COUNT(*) c FROM school_files WHERE page_id=?').get(add.id).c, 2);
+  const ghost1 = addF({ name: 'fantome.pdf', mimeType: 'application/pdf', parents: [old.drive_id], size: '99' }), ghost2 = addF({ name: 'fantome.pdf', mimeType: 'application/pdf', parents: [old.drive_id], size: '99' });
   const run = (await api('POST', '/api/school/reorganize/run', { database_id: ctx.db })).body; assert.ok(run.total >= 1);
   await settle();
   assert.equal(pathOf(old.drive_id), 'DeepWell Cours / Latin / Ancien rangement');
   assert.equal(F.get(old.addenda_id).name, 'Registre des addenda');
   assert.equal(DB.db.prepare('SELECT COUNT(*) c FROM school_files WHERE page_id=?').get(add.id).c, 1);
   assert.equal(F.get(dupDrive).trashed, true, 'la copie va à la corbeille de Drive'); assert.equal(F.get(f1.drive_id).trashed, false, 'l’original reste');
-  assert.equal((await api('POST', '/api/school/reorganize/preview', { database_id: ctx.db })).body.supports.find((s) => s.id === sup.id), undefined, 'plus rien à faire ensuite');
+  assert.ok(!F.get(ghost1).trashed, 'le premier exemplaire reste'); assert.equal(F.get(ghost2).trashed, true, 'doublon présent seulement sur Drive : à la corbeille');
+  const after = (await api('POST', '/api/school/reorganize/preview', { database_id: ctx.db })).body.supports.find((s) => s.id === sup.id);
+  assert.ok(!after.move && !after.rename_addenda && after.duplicates === 0, 'plus rien à déplacer, renommer ou dédoublonner ensuite');
+  const kids = [...F.values()].filter((f) => !f.trashed && f.parents.includes(DB.db.prepare('SELECT drive_id FROM school_addenda WHERE page_id=?').get(add.id).drive_id)).map((f) => f.name).sort();
+  assert.ok(kids.includes('Addendum #0001-01-26-LTN Test.txt') || kids.some((n) => /\.txt$/.test(n) && /Addendum/.test(n)), 'petit fichier texte descriptif dans le dossier de l’addendum');
   ctx.latin = { sup: sup.id, add: add.id };
 });
 

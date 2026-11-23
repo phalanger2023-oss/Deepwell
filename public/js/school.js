@@ -172,7 +172,7 @@ export function openDatabaseSettings(page, { onSaved } = {}) {
       h('button', { class: 'btn small', onclick: () => importDialog(page) }, vi('folder', 14), 'Rattacher mes cours existants…'),
       h('small', { class: 'muted' }, 'Range tes cours déjà présents dans les dossiers Drive. Un aperçu s’affiche d’abord, rien ne bouge sans ta confirmation.'),
       h('button', { class: 'btn small', onclick: () => reorganizeDialog(page) }, vi('folder', 14), 'Réorganiser les dossiers Drive…'),
-      h('small', { class: 'muted' }, 'DeepWell Cours → Matière → Support → Document principal + Registre des addenda. Essai à blanc d’abord ; retire aussi les fichiers en double.')] : []),
+      h('small', { class: 'muted' }, 'DeepWell Cours → Matière → Support → Document principal + Registre des addenda. Chaque addendum a son dossier (nom de sa page) avec un petit fichier texte qui le décrit. Essai à blanc d’abord ; les doublons (dans DeepWell et sur Drive) sont mis à la corbeille de Drive.')] : []),
       ...(state.enabled ? [h('button', { class: 'btn small', onclick: () => abbrevDialog(page, state, onSaved) }, vi('tag', 14), 'Abréviations des matières…'),
         h('small', { class: 'muted' }, 'Pour les titres automatiques « P.S.A. #0007-26-MTH » (par défaut : 3 premières consonnes).')] : []));
   };
