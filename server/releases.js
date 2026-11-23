@@ -8,6 +8,7 @@ export const RELEASES = [
   {
     version: '3.0.0', date: '2026-11-23',
     nouveautes: [
+      'Jeu de π : « Taille des blocs » aussi disponible dans « Réciter de mémoire » (liste ou nombre précis de 1 à 50), commune avec « Apprendre » où la valeur personnalisée est aussi possible.',
       'DeepWell sort de l’alpha : c’est la version 3.0, officielle (les versions précédentes restent visibles dans l’historique, marquées « alpha »).',
       'Notes de version : bouton « Crédits » (réalisé par, en partenariat avec, une citation…), à remplir librement par l’administrateur ; il est aussi affiché dans les notes de version de PDM.',
       'Jeu de π : le classement de tous les comptes est aussi visible par les invités d’une page π (lien public) ; leur propre partie, sans compte, n’y figure pas.',

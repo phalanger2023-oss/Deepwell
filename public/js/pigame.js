@@ -44,6 +44,11 @@ export async function tabPi(p, { section, local = false, dev = false, publicToke
 
   const save = async (r) => { try { await st.post(r); drawHist(); drawBoard(); drawDev(); } catch (e) { toast(e.message, 'error'); } };
 
+  /** Taille des blocs de chiffres (commune à « Apprendre » et « Réciter ») : liste + nombre précis (1 à 50). */
+  const chunkPicker = (redraw) => h('label', {}, 'Taille des blocs ',
+    h('select', { class: 'input', onchange: (e) => { state.chunk = Number(e.target.value); redraw(); } }, [...new Set([3, 4, 5, 10, state.chunk])].sort((a, b) => a - b).map((v) => h('option', { value: v, selected: v === state.chunk }, `${v} chiffres`))),
+    ' ou ', numBox(state.chunk, 1, 50, (v) => { state.chunk = v; redraw(); }));
+
   // ---------- Apprendre : les décimales apparaissent par blocs, on en affiche davantage au fur et à mesure ----------
   const drawLearn = () => {
     const t0 = Date.now();
@@ -58,7 +63,7 @@ export async function tabPi(p, { section, local = false, dev = false, publicToke
     paint();
     play.replaceChildren(
       h('p', { class: 'muted' }, 'Lisez à voix haute, par petits blocs. Quand un bloc est acquis, affichez-en d’autres. Passez ensuite en « Réciter » pour vous tester.'),
-      h('div', { class: 'pi-row' }, h('label', {}, 'Taille des blocs ', h('select', { class: 'input', onchange: (e) => { state.chunk = Number(e.target.value); paint(); } }, [3, 4, 5, 10].map((v) => h('option', { value: v, selected: v === state.chunk }, `${v} chiffres`)))),
+      h('div', { class: 'pi-row' }, chunkPicker(drawLearn),
         h('button', { class: 'btn', onclick: () => { state.shown = Math.min(MAX, state.shown + state.chunk * 2); paint(); } }, `+ ${state.chunk * 2} décimales`),
         h('button', { class: 'btn', onclick: () => { state.shown = Math.max(state.chunk, state.shown - state.chunk * 2); paint(); } }, '− moins'),
         h('button', { class: 'btn', onclick: () => { state.shown = Math.min(MAX, 20); paint(); } }, 'Recommencer à 20'),
@@ -75,7 +80,7 @@ export async function tabPi(p, { section, local = false, dev = false, publicToke
     const typed = h('div', { class: 'pi-digits pi-typed' }), msg = h('div', { class: 'pi-msg' }), stat = h('div', { class: 'muted small' });
     const input = h('input', { class: 'pi-hidden', inputmode: 'numeric', autocomplete: 'off', 'aria-label': 'Décimales de π' });
     const paint = (miss) => {
-      typed.replaceChildren(h('span', { class: 'pi-int' }, '3,'), ...group(PI.slice(0, idx), 5).map((c) => h('span', { class: 'pi-chunk ok' }, c)), miss ? h('span', { class: 'pi-chunk bad' }, miss) : h('span', { class: 'pi-cursor' }, '▍'));
+      typed.replaceChildren(h('span', { class: 'pi-int' }, '3,'), ...group(PI.slice(0, idx), state.chunk).map((c) => h('span', { class: 'pi-chunk ok' }, c)), miss ? h('span', { class: 'pi-chunk bad' }, miss) : h('span', { class: 'pi-cursor' }, '▍'));
       stat.textContent = `${idx} / ${state.target} décimales · ${errs} erreur(s)${state.lives ? ` sur ${state.lives}` : ''}`;
     };
     const finish = async (won) => {
@@ -103,6 +108,7 @@ export async function tabPi(p, { section, local = false, dev = false, publicToke
       h('div', { class: 'pi-row' },
         h('label', {}, 'Objectif ', sel([...new Set([10, 20, 30, 50, 100, 200, 500, 1000, state.target])].sort((a, b) => a - b).map((v) => [v, `${v} décimales`]), state.target, (v) => { state.target = v; drawRecall(); }),
           ' ou ', numBox(state.target, 1, MAX, (v) => { state.target = v; drawRecall(); }), ` (1 à ${MAX})`),
+        chunkPicker(drawRecall),
         h('label', {}, 'Droit à l’erreur ', sel([...new Set([0, 1, 3, state.lives])].sort((a, b) => a - b).map((v) => [v, v === 0 ? 'aucune (parfait)' : `${v} erreur${v > 1 ? 's' : ''}`]), state.lives, (v) => { state.lives = v; drawRecall(); }),
           ' ou ', numBox(state.lives, 0, 100, (v) => { state.lives = v; drawRecall(); }))),
       h('p', { class: 'muted' }, 'Tapez les décimales de π de mémoire (après « 3, »). Le chronomètre démarre à la première touche.'),
