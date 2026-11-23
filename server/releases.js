@@ -6,6 +6,21 @@
  */
 export const RELEASES = [
   {
+    version: '3.5.0', date: '2026-11-23',
+    nouveautes: [
+      'Ctrl + A : une 1ʳᵉ pression sélectionne le texte du bloc, une 2ᵉ pression sélectionne tous les blocs de la page.',
+      'Un texte souligné suivi de « : » : le « : » (et l’espace qui le précède) sortent automatiquement du soulignement.',
+      'Propriétaires (Personnes, Créé par…) affichés en pastilles avec initiale, au lieu d’un identifiant, dans les tableaux, cartes et fiches.',
+    ],
+    ameliorations: [
+      'Tableaux : les titres et textes riches affichent maintenant les dates (lisibles, avec « @ ») et les mentions de page ; on peut les modifier sans perdre les mentions, et taper « @ » pour en ajouter. La date d’une colonne Date s’affiche lisiblement (jour, heure) et se choisit dans la même fenêtre que partout ailleurs.',
+      'Mentions de page : fond gris foncé et texte blanc, pour bien les repérer (les dates restent en gris discret avec « @ »).',
+      'Galerie et liste : la propriété Date est affichée sur la carte par défaut (même si c’est la date de la vue).',
+      'Fermer un aperçu latéral garde la position de défilement de la base (plus de retour en haut de page).',
+    ],
+    corrections: [],
+  },
+  {
     version: '3.4.11', date: '2026-11-22',
     nouveautes: [
       'Exporter une page en PDF (menu « ⋯ » → « Exporter en PDF… ») : mise en page pour le papier (marges, titre, numéros de page), retours à la ligne et changements de page automatiques, blocs dépliants dépliés, choix du papier (A4 / Lettre), de l’orientation, de la taille du texte et des marges. Pour un cours ou un addendum : option « Titre simplifié » qui retire le matricule (P.S.A. #…) et l’intitulé « Addendum » pour ne garder que le nom qui suit (modifiable avant d’exporter), et option d’inclure les sous-pages (addenda) à la suite, une par page. Dans la fenêtre d’impression, choisir « Enregistrer au format PDF ».',

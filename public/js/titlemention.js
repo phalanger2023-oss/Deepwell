@@ -9,19 +9,21 @@ const mention = (m, plain) => ({ type: 'mention', mention: m, plain_text: plain,
 
 /** Remplit le titre (h1 éditable ou non) à partir d'un texte riche : texte brut + atomes de mention non éditables. */
 export function titleToDom(el, rt) {
-  el.replaceChildren(...rt.map((r) => {
+  const nodes = rt.map((r) => {
     if (r.type !== 'mention') return document.createTextNode(r.plain_text ?? r.text?.content ?? '');
     const kind = r.mention?.type || 'x', a = document.createElement('span');
     a.className = `atom atom-${kind}`; a.contentEditable = 'false'; a.dataset.rt = JSON.stringify(r);
     a.textContent = kind === 'page' ? prettify(atomLabel(r)) : atomLabel(r);
     return a;
-  }));
+  });
+  if (nodes.length && nodes[nodes.length - 1].nodeType === 1) nodes.push(document.createTextNode('\u200b')); // sans texte après une mention finale, le curseur ne peut pas se placer derrière
+  el.replaceChildren(...nodes);
 }
 
 /** Relit le titre : tableau de texte riche (textes fusionnés, mentions conservées). */
 export function domToRt(el) {
   const out = [];
-  const push = (s) => { s = s.replace(/[\n​]/g, ' '); if (!s) return; const l = out[out.length - 1]; if (l?.type === 'text') { l.text.content += s; l.plain_text += s; } else out.push(txt(s)); };
+  const push = (s) => { s = s.replace(/\u200b/g, '').replace(/\n/g, ' '); if (!s) return; const l = out[out.length - 1]; if (l?.type === 'text') { l.text.content += s; l.plain_text += s; } else out.push(txt(s)); };
   for (const n of el.childNodes) {
     if (n.nodeType === 3) push(n.textContent);
     else if (n.dataset?.rt) { try { out.push(JSON.parse(n.dataset.rt)); } catch { push(n.textContent); } }

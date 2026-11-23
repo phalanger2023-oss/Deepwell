@@ -768,6 +768,7 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
     const node = nodeOf(el); if (!node) return;
     {
       const prevText = rtPlain(node.content.rich_text);
+      if (e.data === ':' && field0(el)) stripUnderlineColon(el);
       node.content.rich_text = htmlToRt(el);
       const text = nbsp(el.textContent);
       if (node.type === 'paragraph' && /^(---|___|\*\*\*)$/.test(text.trim())) {
@@ -802,6 +803,17 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
     changed();
   });
 
+  const field0 = (el) => el.dataset.field !== 'code' && el.dataset.field !== 'cell';
+  /** Texte souligné suivi de « : » : le « : » (et l'espace qui le précède) sortent du soulignement. */
+  function stripUnderlineColon(el) {
+    const g = getSelection(); if (!g.rangeCount || !g.isCollapsed) return;
+    const n = g.anchorNode; if (!n || n.nodeType !== 3 || g.anchorOffset !== n.data.length || !n.data.endsWith(':')) return;
+    const u = n.parentElement?.closest('u'); if (!u || !el.contains(u) || u.lastChild !== n) return;
+    const m = /(\s?):$/.exec(n.data), tail = m[0]; n.data = n.data.slice(0, n.data.length - tail.length);
+    const out = document.createTextNode(tail); u.after(out);
+    if (!n.data) { const keep = u.childNodes.length === 1; if (keep) u.remove(); }
+    const r = document.createRange(); r.setStart(out, out.data.length); r.collapse(true); g.removeAllRanges(); g.addRange(r);
+  }
   host.addEventListener('keydown', async (e) => {
     if (!editable || isControl(e.target)) return;
     const mod = e.ctrlKey || e.metaKey;
@@ -821,6 +833,15 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
     const el = eventTxt(e) || (rg0 && !rg0.collapsed ? rootTxts().find((t) => rg0.intersectsNode(t)) : null);
     if (!el) { if (e.key === 'Backspace' || e.key === 'Delete') e.preventDefault(); return; } // jamais de suppression « à l'aveugle » hors d'un bloc de texte
     const node = nodeOf(el), field = el.dataset.field;
+    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'a' && field !== 'cell' && field !== 'code') {
+      // Ctrl+A : 1ʳᵉ fois le texte du bloc, 2ᵉ fois (déjà tout sélectionné) tous les blocs de la page
+      const rg = curRange(), whole = document.createRange(); whole.selectNodeContents(el);
+      const full = !!rg && !rg.collapsed && rg.compareBoundaryPoints(Range.START_TO_START, whole) <= 0 && rg.compareBoundaryPoints(Range.END_TO_END, whole) >= 0;
+      e.preventDefault();
+      if (!full && el.textContent.length) { const g = getSelection(); g.removeAllRanges(); g.addRange(whole); }
+      else selectAllBlocks();
+      return;
+    }
     if (slash && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) closeSlash();
     if (slash) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); slash.sel = (slash.sel + (e.key === 'ArrowDown' ? 1 : slash.items.length - 1)) % slash.items.length; drawPopup(); return; }
@@ -1129,6 +1150,7 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
   const selBar = h('div', { class: 'blk-bar', hidden: true, contenteditable: 'false' });
   document.body.append(selBar);
   const topmost = () => [...sel].map((id) => info(id)).filter((i) => i && !(() => { let p = i.parent; while (p) { if (sel.has(p.id)) return true; p = info(p.id)?.parent; } return false; })());
+  function selectAllBlocks() { getSelection().removeAllRanges(); sel.clear(); tree.forEach((n) => sel.add(n.id)); paintSel(); }
   function paintSel() {
     for (const id of [...sel]) if (!info(id)) sel.delete(id);
     host.querySelectorAll('.block.sel').forEach((e) => e.classList.remove('sel'));

@@ -802,3 +802,15 @@ h1.title .atom { font-size: inherit; display: inline; white-space: normal; }
   #print-root .atom-date, #print-root a.atom-page, #print-root .atom-user { color: #555 !important; }
   #print-root table { border-collapse: collapse; width: 100%; } #print-root td, #print-root th { border: .5pt solid #999; padding: 3pt 5pt; }
 }
+/* Cellules de tableau : texte avec mentions, dates lisibles */
+.cell-rich { white-space: pre-wrap; word-break: break-word; cursor: text; min-height: 30px; } .cell-rich:empty::before { content: ''; }
+.cell-rich .atom, .cell-ro .atom { display: inline; padding: 0; background: transparent; white-space: nowrap; font-size: inherit; }
+.date-btn { display: flex; align-items: center; gap: 6px; text-align: left; cursor: pointer; white-space: nowrap; width: 100%; } .date-btn:hover { background: var(--hover); } .date-btn svg { flex: none; color: var(--muted); }
+.person-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--hover); border-radius: 999px; padding: 1px 8px 1px 2px; font-size: 12.5px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person-dot { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+/* mentions de page : fond gris foncé, texte blanc (les dates restent en gris discret) */
+.atom-page, a.atom-page, .rt-title .atom-page, .cell-rich .atom-page, .cell-ro .atom-page { background: #5b5b5b !important; color: #fff !important; border-bottom: 0 !important; border-radius: 4px; padding: 0 6px !important; font-weight: 500; }
+a.atom-page:hover { background: #444 !important; }
+.atom-page .vicon, a.atom-page .vicon, a.atom-page .page-ico { color: #fff !important; }
+.title-mention .atom-page { color: #fff !important; }
+@media print { #print-root a.atom-page, #print-root .atom-page { background: transparent !important; color: #333 !important; padding: 0 !important; } }

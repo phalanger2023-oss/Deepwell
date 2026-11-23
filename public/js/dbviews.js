@@ -6,7 +6,7 @@ import { h, ask, modal, toast, confirmBox, safeUrl, uuid } from './util.js';
 import { rtPlain, plainRt, richTitleNodes } from './richtext.js';
 import { api } from './api.js';
 import { redBar } from './clins.js';
-import { propText, propEditor, titleKey, sortKey, compareProps } from './database.js';
+import { propText, userLabel, propEditor, titleKey, sortKey, compareProps } from './database.js';
 import { vi, iconNode, ICON_COLORS } from './icons.js';
 import { autoClose } from './menus.js';
 import { toInputs, fromInputs, userTz, formatDate, todayIso, prettify } from './dates.js';
@@ -24,6 +24,7 @@ function propBadge(def, prop) {
   if (prop.type === 'select' || prop.type === 'status') return v ? chip(v) : null;
   if (prop.type === 'multi_select') return v?.length ? h('span', { class: 'chips' }, v.map(chip)) : null;
   if (prop.type === 'checkbox') return h('span', { class: 'muted' }, v ? '☑' : '☐');
+  if (prop.type === 'people' || prop.type === 'created_by' || prop.type === 'last_edited_by') { const us = prop.type === 'people' ? v || [] : v ? [v] : []; return us.length ? h('span', { class: 'chips' }, us.map((u) => h('span', { class: 'person-chip', title: userLabel(u) }, h('span', { class: 'person-dot' }, userLabel(u).slice(0, 1).toUpperCase()), userLabel(u)))) : null; }
   const t = propText(prop);
   return t ? h('span', { class: 'card-prop' }, t) : null;
 }
@@ -48,7 +49,11 @@ function peekRow(r, onChange) {
     wrap.classList.remove('in'); setTimeout(() => wrap.remove(), 180);
     if (top && !viaBack && history.state?.dwPeek) { if (toHash) { location.replace(toHash); toHash = null; } else history.back(); } // on rend l'entrée d'historique (plein écran : elle est remplacée, pas empilée)
     if (toHash) location.hash = toHash;
+    // la page de la base est redessinée (données à jour) : on garde la position de défilement, comme si rien n'avait bougé
+    const sc = document.querySelector('.scroll') || document.scrollingElement, y = sc?.scrollTop || 0;
+    const hs = [...document.querySelectorAll('.db-scroll, .kb-board')].map((e, i) => [i, e.scrollLeft]);
     window.dispatchEvent(new Event('dw-refresh-page')); onChange?.();
+    if (y || hs.some(([, x]) => x)) { let n = 0; const back = () => { const s2 = document.querySelector('.scroll') || document.scrollingElement; if (s2) s2.scrollTop = y; const e2 = [...document.querySelectorAll('.db-scroll, .kb-board')]; hs.forEach(([i, x]) => { if (e2[i]) e2[i].scrollLeft = x; }); if (++n < 20 && (!s2 || Math.abs(s2.scrollTop - y) > 2)) setTimeout(back, 60); }; setTimeout(back, 60); }
   };
   const wrap = h('div', { class: 'peek-wrap' }, h('div', { class: 'peek-back', onclick: () => close() }),
     h('aside', { class: 'peek', role: 'dialog', 'aria-label': 'Aperçu de l’entrée' }, h('div', { class: 'peek-head' },
@@ -65,7 +70,7 @@ function peekRow(r, onChange) {
  * « Attraper » le fond d'une vue avec la souris pour la faire défiler (comme une main sur une carte) : tableau, Kanban, galerie, liste, calendrier.
  * Horizontal : le tableau ou le Kanban s'il déborde ; vertical : la page. Cartes, liens, boutons et champs gardent leur comportement normal.
  */
-const NO_GRAB = 'button, input, select, textarea, label, th, [contenteditable="true"], [draggable="true"], .kb-card, .cal-ev, .add-col, .cal-plus, .kb-track';
+const NO_GRAB = 'button, input, select, textarea, label, th, [contenteditable]:not([contenteditable="false"]), [draggable="true"], .kb-card, .cal-ev, .add-col, .cal-plus, .kb-track';
 function grabScroll(body) {
   body.addEventListener('mousedown', (e) => {
     // Une carte du Kanban se déplace d'une colonne à l'autre : pour la saisir comme fond, clic molette ou Maj + glisser.
@@ -115,7 +120,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
   const saveSchema = () => api.patch(`/api/pages/${page.id}`, { schema }).catch((e) => toast(e.message, 'error'));
   const saveViews = () => api.patch(`/api/pages/${page.id}`, { views }).catch((e) => toast(e.message, 'error'));
   const visibleProps = (v) => (v.props ? [tk, ...v.props.filter((p) => p !== tk && schema[p])] : allProps); // l'ordre de v.props est l'ordre d'affichage choisi (le titre reste en tête)
-  const cardProps = (v) => (v.props ? v.props.filter((p) => p !== tk && schema[p]) : allProps.filter((p) => p !== tk && p !== v.group_by && p !== v.date_prop && ['select', 'status', 'multi_select', 'date', 'number', 'checkbox', 'people', 'url'].includes(schema[p].type)).slice(0, 3));
+  const cardProps = (v) => (v.props ? v.props.filter((p) => p !== tk && schema[p]) : allProps.filter((p) => p !== tk && p !== v.group_by && (v.type === 'calendar' ? p !== v.date_prop : true) && ['select', 'status', 'multi_select', 'date', 'number', 'checkbox', 'people', 'url'].includes(schema[p].type)).slice(0, 3));
   const firstOf = (types) => allProps.find((p) => types.includes(schema[p].type));
 
   async function commitRow(r, col, np) {
@@ -142,7 +147,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
       const r = await createRow('', {});
       try { const f = await api.post(`/api/school/pages/${r.id}/folder`); if (f?.pending) toast('Chapitre créé. Google ne répond pas : le dossier Drive sera créé automatiquement dès que possible.'); }
       catch (e) { toast(e.message, 'error'); }
-      if (view().type === 'table') { draw(); host.querySelector('tbody tr:last-child .title-cell input')?.focus(); } else open(r);
+      if (view().type === 'table') { draw(); host.querySelector('tbody tr:last-child .title-cell .cell-input')?.focus(); } else open(r);
     } catch (e) { toast(e.message, 'error'); }
   };
   // Nouvelle ligne depuis un modèle (propriétés + contenu copiés, mentions « @Today » remplacées par la date du jour)
@@ -240,7 +245,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
       editable ? h('button', { class: 'btn small', title: 'Réglages de la base', onclick: openSchoolSettings }, vi('settings', 14), 'Réglages', schoolOn() ? h('span', { class: 'rel-tag' }, 'Scolaire') : null) : null,
       editable ? h('span', { class: 'btn-split' },
         h('button', { class: 'btn primary small', onclick: async () => {
-          try { const r = await createRow('', {}); if (v.type === 'table') { draw(); host.querySelector('tbody tr:last-child .title-cell input')?.focus(); } else open(r); } catch (e) { toast(e.message, 'error'); }
+          try { const r = await createRow('', {}); if (v.type === 'table') { draw(); host.querySelector('tbody tr:last-child .title-cell .cell-input')?.focus(); } else open(r); } catch (e) { toast(e.message, 'error'); }
         } }, vi('plus', 14), 'Nouvelle ligne'),
         h('button', { class: 'btn primary small btn-split-arrow', title: 'Nouvelle ligne depuis un modèle', 'aria-label': 'Choisir un modèle', onclick: (e) => openTemplates(e.currentTarget) }, vi('chevron-down', 14))) : null);
     host.replaceChildren(tabs, tools, body);
@@ -354,7 +359,7 @@ function drawTable(root, v, c) {
   const body = list.map((r) => r.locked ? h('tr', { class: 'row-locked' }, cols.map((col, i) => h('td', { class: col === tk ? 'title-cell' : '' },
       col === tk ? h('div', { class: 'title-wrap' }, h('a', { href: `/#/page/${r.id}`, class: 'open-row', title: 'Page verrouillée : ouvrir pour saisir le code' }, vi('lock', 15)), ttl(r)) : redBar(r.id, i + 1))),
     editable ? h('td', { class: 'row-x' }) : null)
-    : h('tr', { oncontextmenu: (e) => { if (!e.target.closest('input, textarea, select, [contenteditable="true"]')) c.rowMenu(e, r); } }, cols.map((col) => h('td', { class: col === tk ? 'title-cell' : '' },
+    : h('tr', { oncontextmenu: (e) => { if (!e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) c.rowMenu(e, r); } }, cols.map((col) => h('td', { class: col === tk ? 'title-cell' : '' },
     col === tk ? h('div', { class: 'title-wrap' }, h('a', { href: `/#/page/${r.id}`, class: 'open-row', title: 'Ouvrir' }, iconNode(r.icon, 16, 'file-text')), legacyDot(r),
       propEditor(schema[col], r.props?.[col] || { type: 'title', title: plainRt(r.title) }, editable, (np) => c.commitRow(r, col, np), c.saveSchema))
       : propEditor(schema[col], r.props?.[col], editable, (np) => c.commitRow(r, col, np), c.saveSchema))),
