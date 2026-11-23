@@ -73,7 +73,7 @@ test('Google Agenda : création, modification, suppression, verrouillage, agenda
 
   assert.equal(CAL.size, 1); assert.equal([...CAL.values()][0].summary, 'DeepWell');
   let evs = events(); assert.equal(evs.length, 4); // secrète et sans date exclues
-  const by = (t) => evs.find((e) => e.summary === t || e.summary.startsWith(t + ' — '));
+  const by = (t) => evs.find((e) => e.summary === t || e.summary.startsWith(t + ' en '));
   assert.deepEqual(by('Devoir de maths p.12').start, { date: '2026-12-01' }); assert.deepEqual(by('Devoir de maths p.12').end, { date: '2026-12-02' });
   assert.match(by('Devoir de maths p.12').description, /Matière : Maths/); assert.match(by('Devoir de maths p.12').description, new RegExp(`https://dw.test/#/page/${hw.id}`));
   assert.equal(by('Présentation orale').start.dateTime, '2026-12-03T13:00:00.000Z'); assert.equal(by('Présentation orale').end.dateTime, '2026-12-03T14:00:00.000Z'); // sans fin : 1 h

@@ -71,7 +71,7 @@ async function abbrevDialog(page, state, onSaved) {
   try { const sch = page.schema || (await api.get(`/api/pages/${page.id}`)).page.schema || {}; const col = Object.values(sch).find((d) => /^mati/i.test(String(d.name).normalize('NFD').replace(/[̀-ͯ]/g, '')) && ['select', 'status'].includes(d.type)); subjects = (col?.[col.type]?.options || []).map((o) => o.name); } catch { /* base illisible */ }
   const inputs = subjects.map((n) => { const i = h('input', { class: 'input', maxlength: 6, placeholder: 'auto', value: state.abbrevs?.[n] || '', style: 'width:90px;text-transform:uppercase' }); return [n, i]; });
   const m = modal('Abréviations des matières', h('div', { class: 'imp' },
-    h('p', { class: 'muted' }, 'Utilisées dans « P.S.A. #0007-26-MTH » et « Addendum #0007/02-26-MTH ». Laisse vide : les 3 premières consonnes de la matière sont utilisées.'),
+    h('p', { class: 'muted' }, 'Utilisées dans « P.S.A. #0007-26-MTH » et « Addendum [0007/2]-26-MTH : … ». Laisse vide : les 3 premières consonnes de la matière sont utilisées.'),
     subjects.length ? h('div', {}, inputs.map(([n, i]) => h('label', { style: 'display:flex;gap:8px;align-items:center;margin:4px 0' }, h('span', { style: 'flex:1' }, n), i))) : h('p', {}, 'Aucune matière trouvée dans la colonne « Matière ».'),
     h('div', { class: 'row-end' }, h('button', { class: 'btn', onclick: () => m.close() }, 'Fermer'), h('button', { class: 'btn primary', onclick: async () => {
       const ab = {}; for (const [n, i] of inputs) if (i.value.trim()) ab[n] = i.value.trim().toUpperCase().slice(0, 6);

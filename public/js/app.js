@@ -732,7 +732,7 @@ async function showPage(id) {
           toast(`Page ajoutée dans « ${prettify(d.page.title) || 'la base'} »`);
           if (a.open) { await flushSave(); location.hash = `#/page/${row.id}`; }
         } else if (a.type === 'add_subpage') {
-          // mode scolaire : le titre « Addendum du <date> » devient « Addendum #<n° P.S.A.>/<nn>-<année>-<matière> » (le nom se tape ensuite)
+          // mode scolaire : le titre « Addendum du <date> » devient « Addendum [<n° P.S.A.>/<n>]-<année>-<matière> : » (le nom se tape ensuite)
           if (/^Addendum du /i.test(a.title || '') || /\{\{\s*matricule_addendum\s*\}\}/.test(a.title || '')) { try { const t = (await api.get(`/api/school/titles/addendum?page_id=${page.id}`)).title; if (t) a = { ...a, title: t }; } catch { /* hors mode scolaire : titre d'origine */ } }
           const p = await api.post('/api/pages', { parent_id: page.id, title: a.title || '' });
           let blocks = null;

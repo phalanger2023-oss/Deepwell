@@ -12,7 +12,7 @@ export function simplifyTitle(raw) {
   for (let i = 0; i < 4; i++) {
     const before = t;
     t = t.replace(/^(?:P\.?\s?S\.?\s?A\.?|Addend(?:um|a))\b\.?\s*/i, () => { changed = true; return ''; }); // préfixe
-    t = t.replace(/^(?:n°\s*|no\.?\s*)?(?:#\s*[\w.\-/]+|\d{1,6}(?:[-/.][\w]+)+)\s*/i, ''); // matricule : #0001-26-MTH, 0001-26-MTH…
+    t = t.replace(/^(?:n°\s*|no\.?\s*)?(?:#\s*[\w.\-/]+|\[[^\]]*\][\w\-]*|\d{1,6}(?:[-/.][\w]+)+)\s*/i, ''); // matricule : #0001-26-MTH, [0001/1]-26-FR, 0001-26-MTH…
     t = t.replace(/^[\s\-–—:·|,.]+/, '');
     if (t === before) break;
   }
@@ -98,7 +98,12 @@ export function exportPdfDialog(page, { pageInfo, subpages = [], school = false,
         m.close();
         try {
           await buildDocs(docs, o, pageInfo);
-          if (!noPrint) { window.addEventListener('afterprint', cleanupPrint, { once: true }); setTimeout(() => window.print(), 100); }
+          if (!noPrint) {
+            // le nom du fichier PDF proposé par « Enregistrer au format PDF » vient du titre de la fenêtre : on y met le titre choisi
+            const before = document.title, name = String(docs[0].title).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+            if (name) document.title = name;
+            window.addEventListener('afterprint', () => { document.title = before; cleanupPrint(); }, { once: true }); setTimeout(() => window.print(), 100);
+          }
         } catch (e) { cleanupPrint(); toast(e.message || 'Export impossible', 'error'); }
       } }, 'Exporter'))));
   return m;

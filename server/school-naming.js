@@ -1,7 +1,7 @@
 /**
  * Mode scolaire : noms automatiques.
  * - Fiche (support) : « P.S.A. #<n° de l'entrée dans la matière>-<année de début d'année scolaire>-<abréviation de la matière> », ex. « P.S.A. #0007-26-MTH ».
- * - Addendum : « Addendum #<n° du P.S.A.>/<n° de l'addendum>-<année>-<abréviation> », ex. « Addendum #0007/02-26-MTH » (le nom vient ensuite, à la main).
+ * - Addendum : « Addendum [<n° du P.S.A.>/<n° de l'addendum>]-<année>-<abréviation> : », ex. « Addendum [0007/2]-26-MTH : Fiche outils » (le nom vient ensuite, à la main).
  * L'abréviation vient de `dw_school.abbrevs` (réglage de la base) ou, à défaut, des 3 premières consonnes de la matière (Mathématiques → MTH).
  */
 import { db, parse, norm } from './db.js';
@@ -62,6 +62,6 @@ export function addendumTitle(pageId) {
   const psa = numOf(ctx.support.title) ?? 0, subject = subjectOf(ctx.db, ctx.support);
   const ids = db.prepare(`WITH RECURSIVE d(id,depth) AS (SELECT ?1,0 UNION ALL SELECT p.id,d.depth+1 FROM pages p JOIN d ON p.parent_id=d.id WHERE p.archived=0 AND p.kind != 'template' AND d.depth<8) SELECT id FROM d WHERE id != ?1`).all(ctx.support.id).map((r) => r.id);
   let max = 0;
-  for (const id of ids) { const m = /^\s*Addendum\s*#\s*\d+\s*\/\s*0*(\d+)/i.exec(db.prepare('SELECT title FROM pages WHERE id=?').get(id)?.title || ''); if (m && Number(m[1]) > max) max = Number(m[1]); }
-  return `Addendum #${pad(psa)}/${pad(max + 1, 2)}-${schoolYear(ctx.db)}-${abbrevOf(ctx.cfg, subject)} `;
+  for (const id of ids) { const m = /^\s*Addendum\s*(?:#|\[)\s*\d+\s*\/\s*0*(\d+)/i.exec(db.prepare('SELECT title FROM pages WHERE id=?').get(id)?.title || ''); if (m && Number(m[1]) > max) max = Number(m[1]); }
+  return `Addendum [${pad(psa)}/${max + 1}]-${schoolYear(ctx.db)}-${abbrevOf(ctx.cfg, subject)} : `; // ex. « Addendum [0001/1]-26-FR : Fiche outils »
 }

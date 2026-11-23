@@ -8,6 +8,10 @@ export const RELEASES = [
   {
     version: '3.5.0', date: '2026-11-23',
     nouveautes: [
+      'Matricule des addenda comme avant : « Addendum [0001/1]-26-FR : » puis le nom (numéro du P.S.A. sur 4 chiffres, numéro de l’addendum sans zéro devant, année, abréviation de la matière — réglable dans les réglages de la base). Les anciens titres « Addendum #0001/01-… » restent comptés pour le numéro suivant.',
+      'Export PDF : le titre choisi dans la fenêtre d’export devient aussi le nom du fichier proposé au téléchargement.',
+      'Google Agenda : le titre de l’événement ajoute la matière de la ligne : « Nom de l’événement en Matière ».',
+      'Vérifié : renommer une page, un addendum ou changer sa matière met à jour son dossier sur Google Drive (en tâche de fond ; l’addendum après environ 20 s).',
       'Drive des addenda : chaque addendum a son dossier (au nom exact de sa page) dans « Registre des addenda », avec un petit fichier texte (.txt) qui décrit son contenu. « Réorganiser les dossiers Drive… » range maintenant aussi les anciens dossiers d’addenda, renomme les descriptions, et retire les doublons réels présents sur Drive (même nom, même contenu) en plus de ceux connus de DeepWell, à la corbeille de Drive (récupérables).',
       'Les PDF des addenda sont déposés dans PDM (bouton « Éditer dans PDM »), comme les documents des matières, y compris ceux déjà présents lors de la réorganisation.',
       'Aperçu latéral et fiches de base : la valeur d’une propriété est toujours à côté de son nom (les cases à cocher n’étaient plus décalées vers la droite).',

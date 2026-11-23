@@ -307,12 +307,12 @@ test('titre automatique : « P.S.A. #n-année-abréviation » dès que la matiè
   assert.equal((await api('PATCH', `/api/pages/${c.id}`, { props: matiere('Chimie') })).body.title, 'P.S.A. #0001-26-CHM');
 });
 
-test('addendum : titre « Addendum #<n° P.S.A.>/<nn>-<année>-<abréviation> », numéro suivant à chaque addendum', async () => {
-  assert.equal((await api('GET', `/api/school/titles/addendum?page_id=${ctx.m1}`)).body.title, 'Addendum #0001/01-26-MTH ');
-  await api('POST', '/api/pages', { title: 'Addendum #0001/01-26-MTH Les angles', parent_id: ctx.m1 });
-  assert.equal((await api('GET', `/api/school/titles/addendum?page_id=${ctx.m1}`)).body.title, 'Addendum #0001/02-26-MTH ');
+test('addendum : titre « Addendum [<n° P.S.A.>/<n>]-<année>-<abréviation> : », numéro suivant à chaque addendum', async () => {
+  assert.equal((await api('GET', `/api/school/titles/addendum?page_id=${ctx.m1}`)).body.title, 'Addendum [0001/1]-26-MTH : ');
+  await api('POST', '/api/pages', { title: 'Addendum [0001/1]-26-MTH : Les angles', parent_id: ctx.m1 });
+  assert.equal((await api('GET', `/api/school/titles/addendum?page_id=${ctx.m1}`)).body.title, 'Addendum [0001/2]-26-MTH : ');
   const sub = (await api('POST', '/api/pages', { title: 'Sous-page', parent_id: ctx.m1 })).body;
-  assert.equal((await api('GET', `/api/school/titles/addendum?page_id=${sub.id}`)).body.title, 'Addendum #0001/02-26-MTH ', 'depuis une sous-page : même support');
+  assert.equal((await api('GET', `/api/school/titles/addendum?page_id=${sub.id}`)).body.title, 'Addendum [0001/2]-26-MTH : ', 'depuis une sous-page : même support');
   const plain = (await api('POST', '/api/pages', { title: 'Hors scolaire' })).body;
   assert.equal((await api('GET', `/api/school/titles/addendum?page_id=${plain.id}`)).body.title, null);
 });

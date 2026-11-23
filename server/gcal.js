@@ -106,10 +106,11 @@ export function desiredEvents(databaseId, cfg) {
     const times = eventTimes(props?.[cfg.date_prop]?.date, cfg.tz);
     if (!times || (locked && locked.get(r.id))) continue;
     const lines = textProps.map((k) => propLine(k, props[k])).filter(Boolean).map(agendaWords);
-    const subjKey = Object.keys(schema).find((k) => /^mati/i.test(k.normalize('NFD').replace(/[\u0300-\u036f]/g, '')) && ['select', 'status'].includes(schema[k].type)), subject = subjKey ? props[subjKey]?.[schema[subjKey].type]?.name : '';
+    const subjKey = Object.keys(schema).find((k) => /^mati/i.test(k.normalize('NFD').replace(/[\u0300-\u036f]/g, '')) && ['select', 'status', 'multi_select', 'rich_text'].includes(schema[k].type)), sv = subjKey ? props[subjKey]?.[schema[subjKey].type] : null;
+    const subject = Array.isArray(sv) ? sv.map((x) => x.name ?? x.plain_text ?? '').filter(Boolean).join(', ') : (sv?.name || '');
     if (appUrl()) lines.push(`Ouvrir dans DeepWell : ${appUrl()}/#/page/${r.id}`);
     const base = agendaWords((r.title || '').trim() || 'Sans titre'); // la matière (propriété) est précisée dans le titre de l'événement
-    out.set(r.id, { summary: subject && !base.toLowerCase().includes(subject.toLowerCase()) ? `${base} — ${subject}` : base, description: lines.join('\n'), ...times, extendedProperties: { private: { dw_page: r.id, dw_db: databaseId } } });
+    out.set(r.id, { summary: subject && !base.toLowerCase().includes(subject.toLowerCase()) ? `${base} en ${subject}` : base, description: lines.join('\n'), ...times, extendedProperties: { private: { dw_page: r.id, dw_db: databaseId } } });
   }
   return out;
 }
