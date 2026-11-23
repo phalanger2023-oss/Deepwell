@@ -885,3 +885,9 @@ body.guest-preview .sidebar, body.guest-preview .sb-toggle { display: none !impo
 .cal-ex { font-size: .88em; -webkit-line-clamp: 3; }
 @media (max-width: 700px) { .cal-cell { min-height: 110px; padding: 4px; } .cal-item { font-size: .85em; } }
 .cal-item > span { flex: 1 1 0; min-width: 0; } .cal-item > :first-child { flex: none; margin-top: 2px; }
+
+/* propriétés : une ligne = une propriété — le nom à gauche, sa valeur à droite (aussi en aperçu latéral étroit et en mode téléphone) */
+body .prop, body.phone .prop, body.is-peek .prop { grid-template-columns: minmax(96px, 38%) minmax(0, 1fr); gap: 4px 8px; align-items: start; }
+body .prop .prop-label { font-size: .9em; min-height: 32px; }
+body .prop .cell-input, body .prop .opt-trigger, body .prop .date-btn { min-height: 32px; font-size: .95em; }
+body.is-peek .props { gap: 6px; }

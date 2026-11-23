@@ -15,7 +15,7 @@ export const RELEASES = [
       'Vérifié : renommer une page, un addendum ou changer sa matière met à jour son dossier sur Google Drive (en tâche de fond ; l’addendum après environ 20 s).',
       'Drive des addenda : chaque addendum a son dossier (au nom exact de sa page) dans « Registre des addenda », avec un petit fichier texte (.txt) qui décrit son contenu. « Réorganiser les dossiers Drive… » range maintenant aussi les anciens dossiers d’addenda, renomme les descriptions, et retire les doublons réels présents sur Drive (même nom, même contenu) en plus de ceux connus de DeepWell, à la corbeille de Drive (récupérables).',
       'Les PDF des addenda sont déposés dans PDM (bouton « Éditer dans PDM »), comme les documents des matières, y compris ceux déjà présents lors de la réorganisation.',
-      'Aperçu latéral et fiches de base : la valeur d’une propriété est toujours à côté de son nom (les cases à cocher n’étaient plus décalées vers la droite).',
+      'Aperçu latéral et fiches de base : une ligne = une propriété, le nom à gauche et la valeur à droite, même quand l’aperçu est étroit ou en mode téléphone (avant, la valeur passait sous le nom).',
       'Calendrier : cases plus hautes, texte plus grand, titres sur plusieurs lignes au lieu d’être coupés.',
       'Mode téléphone : panneau latéral qui se glisse par-dessus, boutons plus grands, menus en bas de l’écran, colonnes empilées, texte sans zoom. Automatique sur écran étroit ou tactile ; réglable dans Réglages → Apparence → « Mode téléphone ».',
       'Aperçu invité : menu ⋯ d’une page → « Aperçu invité (lecture seule) » pour voir la page comme quelqu’un qui n’a que la lecture (sans panneau latéral ni boutons de partage), puis « Quitter l’aperçu ».',
