@@ -43,7 +43,7 @@ export async function siteLogoSvg() {
   }
   if (/^(\/|https?:)/.test(icon)) {
     const img = await imageData(icon).catch(() => null);
-    if (!img || !/^image\/(png|jpe?g|webp|gif|avif)$/.test(img.mime)) return null; // un SVG externe n'est pas intégré (pas de script étranger)
+    if (!img || !/^image\/[a-z0-9.+-]+$/i.test(img.mime)) return null; // intégrée comme image (un SVG ainsi inclus ne peut exécuter aucun script)
     return wrap(`<image width="32" height="32" preserveAspectRatio="xMidYMid meet" href="data:${img.mime};base64,${img.buf.toString('base64')}"/>`);
   }
   return wrap(`<text x="16" y="25" font-size="25" text-anchor="middle">${esc(icon)}</text>`);

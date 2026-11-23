@@ -48,6 +48,7 @@ export async function pdmPushLogo(force = true) {
   const cfg = pdmConfig(); if (!cfg) return false;
   try {
     const svg = (await siteLogoSvg()) || '';
+    if (!svg && getSetting('favicon', '')) console.warn('[pdm] icône du site non convertie en logo :', String(getSetting('favicon', '')).slice(0, 80));
     const fp = `${cfg.url}|${crypto.createHash('sha256').update(svg).digest('hex')}`;
     if (!force && getSetting('pdm_logo_sent', '') === fp) return true; // déjà chez PDM
     await call(cfg, '/api/integration/logo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ svg }) });
