@@ -787,8 +787,18 @@ h1.title .atom { font-size: inherit; display: inline; white-space: normal; }
 @media print {
   html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
   body > *:not(#print-root) { display: none !important; }
-  #print-root { display: block; color: #1b1b1b; background: #fff; font-family: Georgia, 'Times New Roman', serif; font-size: var(--pr-size, 11pt); line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #print-root { display: block; color: #1b1b1b; background: #fff; font-family: var(--pr-font, Georgia, 'Times New Roman', serif); font-size: var(--pr-size, 11pt); line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Toujours les couleurs « clair » sur le papier, même si l'écran est en thème sombre */
+  #print-root { --bg:#fff; --fg:#1b1b1b; --muted:#555; --faint:#777; --border:rgba(0,0,0,.18); --hover:rgba(55,53,47,.08); --card:#fff; --code-bg:rgba(135,131,120,.15); --divider-color:rgba(0,0,0,.2); color-scheme: light; }
   #print-root * { box-shadow: none !important; }
+  /* Colonnes : côte à côte (la fenêtre d'impression A4 fait moins de 800 px : sans ceci, la règle « petit écran » les empilait) */
+  #print-root.pr-cols .columns { display: flex !important; flex-direction: row !important; gap: 16pt !important; }
+  #print-root.pr-cols .column { flex: 1 1 0 !important; min-width: 0 !important; }
+  #print-root.pr-continuous .columns { display: block !important; }
+  #print-root .row.has-cols { break-inside: auto; }
+  #print-root .t-callout .row { background: var(--hover); border-left: 3pt solid #9a9890; border-radius: 3pt; padding: 8pt 11pt; }
+  #print-root .t-callout .row[class*="bg-"], #print-root .t-callout .bg-gray { border-left-color: currentColor; }
+  #print-root .t-quote .row { border-left: 2.5pt solid #444; padding-left: 10pt; }
   #print-root .pr-next { break-before: page; }
   #print-root .pr-title { font: 700 1.9em/1.2 Georgia, 'Times New Roman', serif; margin: 0 0 .7em; padding-bottom: .3em; border-bottom: 1.5pt solid #222; break-after: avoid; }
   #print-root .editor { display: block; padding: 0; margin: 0; width: auto; max-width: none; }
@@ -814,3 +824,39 @@ a.atom-page:hover { background: #444 !important; }
 .atom-page .vicon, a.atom-page .vicon, a.atom-page .page-ico { color: #fff !important; }
 .title-mention .atom-page { color: #fff !important; }
 @media print { #print-root a.atom-page, #print-root .atom-page { background: transparent !important; color: #333 !important; padding: 0 !important; } }
+
+/* ===== Onglet Serveur et jeu de π ===== */
+.st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.st-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--card); border-left: 4px solid var(--border); }
+.st-card.ok { border-left-color: #2f9e5b; } .st-card.warn { border-left-color: #e0a100; } .st-card.bad { border-left-color: #d9423e; }
+.st-l { font-size: .8em; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; } .st-v { font-size: 1.35em; font-weight: 650; margin: 2px 0; } .st-s { line-height: 1.35; }
+.st-sparkrow { margin-top: 10px; color: var(--accent); display: flex; align-items: center; flex-wrap: wrap; gap: 4px; } .st-spark { vertical-align: middle; }
+.pi-tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; } .pi-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+.pi-digits { font: 600 1.5em/1.7 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: .04em; word-break: break-all; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); min-height: 3.4em; }
+.pi-int { color: var(--accent); margin-right: .3em; } .pi-chunk { margin-right: .55em; display: inline-block; } .pi-chunk.last { background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 4px; }
+.pi-chunk.ok { color: #2f9e5b; } .pi-chunk.bad { color: #d9423e; text-decoration: underline wavy; } .pi-cursor { animation: pi-blink 1s steps(2) infinite; color: var(--accent); }
+@keyframes pi-blink { 50% { opacity: 0; } } .pi-hidden { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.pi-msg { min-height: 1.6em; margin: 8px 0; font-weight: 600; } .pi-msg.win { color: #2f9e5b; } .pi-msg.lose { color: #d9423e; }
+.pi-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 280px; margin-top: 10px; } .pi-keypad .btn { font-size: 1.4em; padding: 14px 0; justify-content: center; }
+.pi-play.shake { animation: pi-shake .3s; } @keyframes pi-shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+.pi-bars { display: flex; align-items: flex-end; gap: 3px; height: 64px; margin: 4px 0 14px; } .pi-bar { flex: 1; max-width: 18px; background: var(--accent); border-radius: 3px 3px 0 0; opacity: .85; }
+
+/* ===== Mode téléphone (body.phone) : tactile d'abord ===== */
+body.phone .sidebar { position: fixed; z-index: 50; inset: 0 auto 0 0; transform: translateX(-100%); transition: transform .18s; width: min(86vw, 320px); box-shadow: var(--shadow); margin-left: 0 !important; }
+body.phone.sidebar-open .sidebar { transform: none; }
+body.phone .topbar .sb-toggle, body.phone .menu-btn { display: inline-flex; }
+body.phone .page { padding: 16px 14px 30vh; max-width: 100%; } body.phone .title { font-size: 28px; } body.phone .handle, body.phone .toc-rail { display: none !important; }
+body.phone .prop { grid-template-columns: 1fr; } body.phone .columns { flex-direction: column; gap: 0; } body.phone .t-heading_1 .txt { font-size: 1.6em; }
+body.phone input, body.phone select, body.phone textarea, body.phone .input { font-size: 16px; }
+body.phone .btn, body.phone .icon-btn, body.phone .si, body.phone .tabs a, body.phone .ctx-menu button, body.phone .slash-menu button { min-height: 44px; }
+body.phone .icon-btn { min-width: 44px; justify-content: center; }
+body.phone .topbar { padding: 4px 6px; gap: 4px; } body.phone .crumbs { min-width: 0; overflow: hidden; } body.phone .crumbs a, body.phone .crumbs span { white-space: nowrap; }
+body.phone .top-right .btn.small { padding: 8px 10px; }
+body.phone .ctx-menu { left: 8px !important; right: 8px !important; top: auto !important; bottom: 8px; border-radius: 14px; max-height: 70vh; overflow: auto; z-index: 120; }
+body.phone .modal-back { padding: 0; place-items: end center; } body.phone .modal, body.phone .modal.wide { width: 100%; max-height: 92vh; overflow: auto; border-radius: 16px 16px 0 0; }
+body.phone .db-scroll, body.phone .t-table, body.phone table.plain { overflow-x: auto; display: block; max-width: 100%; }
+body.phone .st-grid { grid-template-columns: 1fr 1fr; } body.phone .settings .tabs { overflow-x: auto; flex-wrap: nowrap; }
+body.phone .pi-digits { font-size: 1.25em; } body.phone .pi-keypad { max-width: none; }
+/* Aperçu invité : pas de panneau latéral, une pastille bien visible */
+body.guest-preview .sidebar, body.guest-preview .sb-toggle { display: none !important; }
+.guest-pill { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg); border-radius: 999px; padding: 4px 11px; font-size: .85em; white-space: nowrap; }

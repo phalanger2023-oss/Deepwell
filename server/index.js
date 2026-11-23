@@ -18,6 +18,8 @@ import { schoolRouter } from './school-drive.js';
 import { pdmRouter } from './pdm.js';
 import { pingRouter, activityRouter } from './activity.js';
 import { gcalRouter, startGcalSweep } from './gcal.js';
+import { pingRouter as latencyRouter, statusRouter, timingMiddleware } from './status.js';
+import { piRouter } from './pi.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const app = express();
@@ -47,6 +49,8 @@ app.use((req, res, next) => {
   next();
 });
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
+app.use(timingMiddleware);
+app.use('/api/ping', latencyRouter); // latence : sans authentification, sans corps
 app.use(sessionMiddleware);
 // Anti-CSRF : toute requête modifiante doit porter l'en-tête personnalisé (impossible en formulaire cross-site)
 app.use('/api', (req, res, next) =>
@@ -63,6 +67,8 @@ app.use('/api/pdm', pdmRouter);
 app.use('/api/gcal', gcalRouter);
 app.use('/api/activity', pingRouter);
 app.use('/api/admin/activity', activityRouter);
+app.use('/api/admin/status', statusRouter);
+app.use('/api/pi', piRouter);
 
 // --- Réglages (personnalisation) ---
 const PUBLIC_KEYS = ['site_name', 'accent', 'font', 'radius', 'custom_css', 'default_theme', 'content_width', 'divider_color', 'text_size', 'favicon', 'dev_mode'];

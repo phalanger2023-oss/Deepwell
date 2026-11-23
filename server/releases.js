@@ -8,6 +8,11 @@ export const RELEASES = [
   {
     version: '3.5.0', date: '2026-11-23',
     nouveautes: [
+      'Mode téléphone : panneau latéral qui se glisse par-dessus, boutons plus grands, menus en bas de l’écran, colonnes empilées, texte sans zoom. Automatique sur écran étroit ou tactile ; réglable dans Réglages → Apparence → « Mode téléphone ».',
+      'Aperçu invité : menu ⋯ d’une page → « Aperçu invité (lecture seule) » pour voir la page comme quelqu’un qui n’a que la lecture (sans panneau latéral ni boutons de partage), puis « Quitter l’aperçu ».',
+      'Réglages → Serveur (administrateur) : état du serveur en direct (processeur, mémoire, disque, base de données, requêtes, tâches, dernière sauvegarde), ping mesuré depuis votre appareil (moyenne, gigue) et performances de l’appareil (fluidité, vitesse, réseau).',
+      'Réglages → π : jeu de mémorisation des décimales de π. « Apprendre » affiche les décimales par blocs ; « Réciter de mémoire » vous fait taper les décimales (objectif et droit à l’erreur au choix, chronomètre). L’historique et le record sont gardés pour chaque compte.',
+      'Export PDF : choix de la police du document, et option « Texte continu » (colonnes empilées) ; sinon les colonnes restent côte à côte comme à l’écran.',
       'Ctrl + A : une 1ʳᵉ pression sélectionne le texte du bloc, une 2ᵉ pression sélectionne tous les blocs de la page.',
       'Un texte souligné suivi de « : » : le « : » (et l’espace qui le précède) sortent automatiquement du soulignement.',
       'Propriétaires (Personnes, Créé par…) affichés en pastilles avec initiale, au lieu d’un identifiant, dans les tableaux, cartes et fiches.',
@@ -24,7 +29,8 @@ export const RELEASES = [
       'Fermer un aperçu latéral garde la position de défilement de la base (plus de retour en haut de page).',
       'Drive : deux envois simultanés ne créent plus deux dossiers identiques, et un fichier envoyé deux fois (même nom, même taille) n’est gardé qu’une fois. Supprimer définitivement un addendum envoie aussi son dossier Drive à la corbeille de Drive (récupérable).',
     ],
-    corrections: [],
+    corrections: [
+      'Export PDF : les couleurs sont toujours celles du thème clair (un thème sombre imprimait des cadres bleu nuit et du texte blanc), et les colonnes ne s’empilent plus à cause de la largeur de la feuille.',],
   },
   {
     version: '3.4.11', date: '2026-11-22',

@@ -106,7 +106,15 @@ function renderAuth(me) {
 
 // ================= coquille =================
 let sidebarEl, mainEl;
-const isNarrow = () => window.matchMedia('(max-width: 800px)').matches;
+const isNarrow = () => window.matchMedia('(max-width: 800px)').matches || document.body.classList.contains('phone');
+// Mode téléphone : « auto » (écran étroit, ou écran tactile de taille moyenne), « on » (forcé) ou « off ». Réglage propre à l'appareil.
+export function applyPhoneMode() {
+  const pref = store.get('dw_phone', 'auto');
+  const on = pref === 'on' || (pref === 'auto' && (matchMedia('(max-width: 760px)').matches || (matchMedia('(pointer: coarse)').matches && innerWidth < 1000)));
+  document.body.classList.toggle('phone', on);
+  document.documentElement.classList.toggle('phone', on);
+}
+window.addEventListener('resize', applyPhoneMode); applyPhoneMode();
 /** Panneau latéral : masqué/affiché (mémorisé sur l'appareil) ; sur petit écran il s'ouvre en tiroir. */
 function applySidebarState() { document.querySelector('.shell')?.classList.toggle('sb-hidden', !isNarrow() && store.get('dw_sb_hidden', false)); }
 function toggleSidebar() {
@@ -145,6 +153,8 @@ async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   S.token = null;
   document.body.classList.remove('sidebar-open');
+  if (S.guest && !(parts[0] === 'page' && parts[1] === S.guest)) S.guest = null; // l'aperçu invité ne suit pas quand on change de page
+  document.body.classList.toggle('guest-preview', !!S.guest);
   if (parts[0] === 'public') {
     S.token = parts[1];
     try {
@@ -526,7 +536,9 @@ async function showPage(id) {
       notFound ? h('p', { class: 'small' }, 'Si vous suivez un lien issu de Notion : cette page n’a probablement pas été importée (non partagée avec l’intégration Notion). Partagez-la dans Notion (••• → Connexions), puis relancez l’import dans Réglages → Import Notion.') : null,
       notFound ? null : h('a', { class: 'btn primary', href: '#/' }, 'Se connecter')));
   }
-  const { page, blocks, children, crumbs, role } = data;
+  const { page, blocks, children, crumbs } = data;
+  const guest = S.guest === page.id && !S.token;                  // « Aperçu invité » : on voit la page comme quelqu'un qui n'a que la lecture
+  const role = guest ? 'view' : data.role;
   S.current = page; drawSidebar();
   armIdleLock(page.id); startPing(page.id);
   if (!S.token) recordVisit(page.id);
@@ -610,6 +622,7 @@ async function showPage(id) {
   parts[1].append(body);
   const topRight = [h('span', { id: 'save-status', class: 'muted small' }, '')];
   if (S.token) topRight.push(h('span', { class: 'muted small' }, 'Page publique'), S.me ? h('a', { class: 'btn small', href: '#/' }, 'Ouvrir Deepwell') : null);
+  else if (guest) topRight.push(h('span', { class: 'guest-pill' }, '👁 Aperçu invité — lecture seule'), h('button', { class: 'btn small primary', onclick: () => { S.guest = null; location.hash = `#/page/${page.id}`; showPage(page.id); document.body.classList.remove('guest-preview'); } }, 'Quitter l’aperçu'));
   else {
     topRight.push(h('button', { class: 'icon-btn cm-top', title: 'Commentaires', 'aria-label': 'Commentaires', onclick: () => showComments(page, role, null) }, vi('message-square', 18), h('span', { id: 'cm-count', class: 'cm-count', hidden: true })));
     topRight.push(h('button', { class: `icon-btn fav-top ${isFav(page.id) ? 'on' : ''}`, title: 'Ajouter aux favoris / retirer', 'aria-label': 'Favori', onclick: () => toggleFav(page) }, vi('star', 18)));
@@ -953,6 +966,7 @@ function pageMenu(anchor, page, role, editable) {
       try { const r = await api.post(`/api/pages/${page.id}/arch-reference`); toast(`Architecture de référence enregistrée (${r.kept} blocs de structure)`); } catch (e) { toast(e.message, 'error'); }
     } });
   }
+  if (role === 'owner' || editable) items.push({ label: 'Aperçu invité (lecture seule)', icon: 'eye', fn: () => { S.guest = page.id; document.body.classList.add('guest-preview'); return showPage(page.id); } });
   if (page.kind === 'page' && !S.token) items.push({ label: 'Exporter en PDF…', icon: 'download', fn: async () => {
     const subs = [...(S.pageMap?.values() || [])].filter((x) => x.parent_id === page.id && x.kind === 'page' && !x.archived && !x.locked).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((x) => ({ id: x.id, title: x.title }));
     (await import('./pdfexport.js')).exportPdfDialog(page, { pageInfo, subpages: subs, school: !!S.pageMap?.get(page.parent_id) && S.pageMap.get(page.parent_id).kind === 'database' });
@@ -1045,16 +1059,18 @@ async function showReleases() {
 }
 
 // ================= réglages =================
-const TABS = [['dev', 'Développeur'], ['profile', 'Profil'], ['datetime', 'Date et heure'], ['appearance', 'Apparence'], ['drive', 'Google Drive'], ['import', 'Import Notion'], ['backup', 'Sauvegardes'], ['activity', 'Connexions'], ['users', 'Utilisateurs']];
+const TABS = [['dev', 'Développeur'], ['profile', 'Profil'], ['datetime', 'Date et heure'], ['appearance', 'Apparence'], ['drive', 'Google Drive'], ['import', 'Import Notion'], ['backup', 'Sauvegardes'], ['server', 'Serveur'], ['pi', 'π'], ['activity', 'Connexions'], ['users', 'Utilisateurs']];
+const ADMIN_TABS = ['backup', 'users', 'dev', 'activity', 'server'];
 async function showSettings(tab) {
   S.current = null; drawSidebar();
   const isAdmin = S.me.role === 'admin';
   const panel = h('div', { class: 'settings-panel' });
   mainEl.replaceChildren(topbar([{ title: 'Réglages' }]), h('div', { class: 'scroll' }, h('div', { class: 'page settings' },
     h('h1', { class: 'title static' }, '⚙ Réglages'),
-    h('div', { class: 'tabs' }, TABS.filter(([k]) => isAdmin || !['backup', 'users', 'dev', 'activity'].includes(k)).map(([k, l]) => h('a', { href: `#/settings/${k}`, class: k === tab ? 'on' : '' }, l))), panel)));
-  const fn = { profile: tabProfile, datetime: tabDatetime, appearance: tabAppearance, drive: tabDrive, import: tabImport, backup: tabBackup, activity: tabActivity, users: tabUsers, dev: tabDev }[tab] || tabProfile;
-  if (['backup', 'users', 'dev', 'activity'].includes(tab) && !isAdmin) return panel.append(h('p', {}, 'Réservé aux administrateurs.'));
+    h('div', { class: 'tabs' }, TABS.filter(([k]) => isAdmin || !ADMIN_TABS.includes(k)).map(([k, l]) => h('a', { href: `#/settings/${k}`, class: k === tab ? 'on' : '' }, l))), panel)));
+  const fn = { profile: tabProfile, datetime: tabDatetime, appearance: tabAppearance, drive: tabDrive, import: tabImport, backup: tabBackup, activity: tabActivity, users: tabUsers, dev: tabDev,
+    server: async (p) => (await import('./serverstatus.js')).tabServer(p, { section }), pi: async (p) => (await import('./pigame.js')).tabPi(p, { section }) }[tab] || tabProfile;
+  if (ADMIN_TABS.includes(tab) && !isAdmin) return panel.append(h('p', {}, 'Réservé aux administrateurs.'));
   try { await fn(panel); } catch (e) { panel.append(h('div', { class: 'form-err' }, e.message)); }
 }
 const field = (label, input, help) => h('label', { class: 'field' }, h('span', {}, label), input, help ? h('small', { class: 'muted' }, help) : null);
@@ -1103,7 +1119,10 @@ async function tabAppearance(p) {
   const wide = h('input', { type: 'checkbox' }); wide.checked = store.get('dw_wide', false); wide.onchange = () => store.set('dw_wide', wide.checked);
   const ctxMode = sel([['deepwell', 'Menu de Deepwell (Maj + clic droit : menu du navigateur)'], ['native', 'Toujours le menu du navigateur (orthographe)']], store.get('dw_ctx_mode', 'deepwell'));
   ctxMode.onchange = () => store.set('dw_ctx_mode', ctxMode.value);
+  const phone = sel([['auto', 'Automatique (écran étroit ou tactile)'], ['on', 'Toujours activé'], ['off', 'Désactivé']], store.get('dw_phone', 'auto'));
+  phone.onchange = () => { store.set('dw_phone', phone.value); applyPhoneMode(); };
   p.append(section('Mon affichage', 'Ces choix ne concernent que vous, sur cet appareil.',
+    field('Mode téléphone', phone, 'Panneau latéral qui se glisse par-dessus, boutons plus grands, menus en bas de l’écran, texte lisible sans zoom.'),
     field('Thème', theme, 'Clair, sombre ou automatique.'), field('Taille du texte', mySize, 'Taille du texte des pages et de l’interface. « Valeur du site » reprend le réglage de l’administrateur.'),
     h('label', { class: 'check' }, wide, 'Afficher les pages en pleine largeur (ignore la « largeur de la colonne de texte »)'),
     field('Clic droit dans les pages', ctxMode, 'Sur un bloc, le clic droit ouvre le menu du bloc (couleur, déplacer, dupliquer, supprimer…). Le menu du navigateur reste accessible avec Maj + clic droit, et sur du texte sélectionné.')));
