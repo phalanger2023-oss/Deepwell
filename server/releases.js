@@ -8,6 +8,8 @@ export const RELEASES = [
   {
     version: '3.5.0', date: '2026-11-23',
     nouveautes: [
+      'Jeu de π en page à part : tape « /pi » dans une page pour créer une page « π — jeu de mémoire ». Scores et historique sont ceux de ton compte, communs à toutes tes pages π. Avec « Partager » → lien public, des personnes sans compte peuvent y jouer (leur historique reste alors dans leur navigateur).',
+      'Menu « / » : les blocs dont un mot correspond exactement à ce que tu tapes passent en premier.',
       'Les addenda se rangent tout seuls dans l’ordre de leur numéro (… [0001/1], [0001/2]…) dès qu’on en ajoute un ou qu’on change son numéro ; les autres sous-pages ne bougent pas.',
       'Matricule des addenda comme avant : « Addendum [0001/1]-26-FR : » puis le nom (numéro du P.S.A. sur 4 chiffres, numéro de l’addendum sans zéro devant, année, abréviation de la matière — réglable dans les réglages de la base). Les anciens titres « Addendum #0001/01-… » restent comptés pour le numéro suivant.',
       'Export PDF : le titre choisi dans la fenêtre d’export devient aussi le nom du fichier proposé au téléchargement.',

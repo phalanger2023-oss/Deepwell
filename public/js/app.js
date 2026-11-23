@@ -688,6 +688,8 @@ async function showPage(id) {
       })) : h('div', { class: 'muted pad' }, 'Ce dossier est vide. Ajoutez-y des pages ou d’autres dossiers, ou déplacez-en avec « Déplacer vers… ».')));
   } else if (page.kind === 'database') {
     renderDatabase(body, { page, rows: children.map((c) => ({ id: c.id, title: c.title, icon: c.icon, cover: c.cover, legacy: c.legacy, locked: c.locked, srank: c.srank, total: c.total, props: c.props || {} })), role, onChange: refreshTree });
+  } else if (page.props?.dw_pi) { // page « π » : le jeu à la place de l'éditeur ; scores et historique sont ceux du compte, communs à toutes les pages π
+    await (await import('./pigame.js')).tabPi(body, { section, local: !S.me });
   } else {
     const host = h('div', {});
     body.append(host);
@@ -695,7 +697,7 @@ async function showPage(id) {
       mountSchoolFiles: schoolPanel ? (box) => { box.append(schoolPanel); } : null,
       onChange: () => { S.dirty = true; setStatus('Modifié…'); scheduleSave(); },
       upload: (f) => api.upload(f),
-      createSubpage: async () => { const p = await api.post('/api/pages', { parent_id: page.id, title: '' }); refreshTree(); return p; },
+      createSubpage: async (o = {}) => { const p = await api.post('/api/pages', { parent_id: page.id, title: o.title || '' }); if (o.props || o.icon) { await api.patch(`/api/pages/${p.id}`, { ...(o.props ? { props: o.props } : {}), ...(o.icon ? { icon: o.icon } : {}) }); p.props = o.props; p.icon = o.icon; } refreshTree(); return p; },
       pickDrive: pickDriveFile,
       pageInfo, recentPages, users: loadUsers,
       searchPages: (q) => api.get(`/api/pages/search?q=${encodeURIComponent(q)}`),

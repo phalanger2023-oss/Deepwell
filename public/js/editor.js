@@ -51,7 +51,7 @@ const SLASH_ITEMS = [
   ['Toggle', 'toggle', 'liste dépliante toggle'], ['Citation', 'quote', 'citation quote'], ['Cadre', 'callout', 'cadre encadré callout info'], ['Code', 'code', 'code bloc'],
   ['Séparateur', 'divider', 'séparateur divider ligne'], ['Image', 'image', 'image photo'], ['Fichier', 'file', 'fichier pièce jointe'], ['Vidéo', 'video', 'vidéo'], ['PDF', 'pdf', 'pdf'], ['Audio', 'audio', 'audio son'],
   ['Marque-page', 'bookmark', 'lien marque-page bookmark'], ['Intégration', 'embed', 'embed intégrer iframe'], ['Tableau', 'table', 'tableau table'], ['2 colonnes', 'column_list2', 'colonnes'], ['3 colonnes', 'column_list3', 'colonnes'],
-  ['Équation', 'equation', 'équation maths'], ['Table des matières', 'table_of_contents', 'sommaire table des matières'], ['Fichiers du chapitre', 'school_files', 'fichiers chapitre drive pièces jointes scolaire'], ['Sous-page', 'child_page', 'page sous-page'], ['Google Drive', 'drive_file', 'google drive fichier'],
+  ['Équation', 'equation', 'équation maths'], ['Table des matières', 'table_of_contents', 'sommaire table des matières'], ['Fichiers du chapitre', 'school_files', 'fichiers chapitre drive pièces jointes scolaire'], ['Sous-page', 'child_page', 'page sous-page'], ['π — jeu de mémoire', 'pi_page', 'pi π jeu mémoire décimales'], ['Google Drive', 'drive_file', 'google drive fichier'],
   ['Bouton', 'button', 'bouton button action automatisation routine'], ['Graphique', 'chart', 'graphique chart diagramme statistiques'], ['Graphique en courbe', 'chart:line', 'graphique courbe ligne'], ['Graphique en anneau', 'chart:donut', 'graphique anneau camembert pie'],
 ];
 const SLASH_ICONS = { school_files: '📎', paragraph: 'T', heading_1: 'H1', heading_2: 'H2', heading_3: 'H3', bulleted_list_item: '•', numbered_list_item: '1.', to_do: '☑', toggle: '▸', quote: '▌', callout: '💡', code: '</>', divider: '—', image: '🖼', file: '📎', video: '🎬', pdf: '📄', audio: '🎵', bookmark: '🔖', embed: '🌐', table: '▦', column_list2: '▥', column_list3: '▥', equation: '∑', table_of_contents: '☰', child_page: '📄', drive_file: '△', button: '▶', chart: '📊', 'chart:line': '📈', 'chart:donut': '◔' };
@@ -556,7 +556,8 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
   function openSlash(el, node, q) {
     const nq = norm(q);
     const items = SLASH_ITEMS.filter(([, type]) => type !== 'school_files' || hooks.mountSchoolFiles).filter(([label, , kw]) => !nq || norm(label).includes(nq) || norm(kw).includes(nq))
-      .map(([label, type]) => ({ icon: SLASH_ICONS[type] || '+', label, run: () => applySlash(type) }));
+      .map(([label, type, kw], i) => { const words = `${norm(label)} ${norm(kw)}`.split(/\s+/); return { i, rank: !nq ? 0 : words.includes(nq) ? 0 : words.some((w) => w.startsWith(nq)) ? 1 : 2, icon: SLASH_ICONS[type] || '+', label, run: () => applySlash(type) }; })
+      .sort((a, b) => a.rank - b.rank || a.i - b.i); // « /pi » : le jeu π avant les mots qui contiennent seulement « pi »
     if (!items.length) return closeSlash();
     slash = { kind: 'slash', el, node, q, items, sel: Math.min(slash?.sel ?? 0, items.length - 1) };
     drawPopup();
@@ -655,6 +656,8 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
       const b = newBlock('button'); place(b); configureButton(b);
     } else if (type === 'child_page') {
       try { const p = await hooks.createSubpage(); place(newBlock('child_page', { title: p.title || 'Sans titre', page_id: p.id })); } catch (e) { toast(e.message, 'error'); }
+    } else if (type === 'pi_page') { // page à part : le jeu de π (scores et historique communs à toutes les pages π du compte)
+      try { const p = await hooks.createSubpage({ title: 'π — jeu de mémoire', icon: '🧮', props: { dw_pi: true } }); place(newBlock('child_page', { title: p.title || 'π — jeu de mémoire', page_id: p.id })); } catch (e) { toast(e.message, 'error'); }
     } else if (type === 'drive_file') {
       try { const f = await hooks.pickDrive(); if (f) place(newBlock('drive_file', { file_id: f.id, name: f.name, url: f.webViewLink, mimeType: f.mimeType, iconLink: f.iconLink })); } catch (e) { toast(e.message, 'error'); }
     } else if (type === 'divider') { // un séparateur est toujours suivi d'un bloc de texte prêt à écrire

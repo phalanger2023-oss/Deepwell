@@ -17,7 +17,17 @@ export function piDigits(n) {
 const group = (s, size = 5) => s.match(new RegExp(`.{1,${size}}`, 'g')) || [];
 const fmtT = (s) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s * 10) / 10} s`);
 
-export async function tabPi(p, { section }) {
+// Sans compte (lien public) : l'historique reste dans ce navigateur ; avec un compte : sur le serveur, commun à toutes les pages π.
+const LOCAL_KEY = 'dw_pi_runs';
+const localRuns = () => { try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || '[]'); } catch { return []; } };
+const store = (local) => local ? {
+  get: async () => { const runs = localRuns().sort((a, b) => b.at - a.at); return { runs, best: Math.max(0, ...runs.filter((r) => r.mode === 'recall').map((r) => r.digits)) }; },
+  post: async (r) => { const run = { id: Math.random().toString(36).slice(2), at: Date.now(), ...r }; try { localStorage.setItem(LOCAL_KEY, JSON.stringify([run, ...localRuns()].slice(0, 200))); } catch {} return run; },
+  del: async () => { try { localStorage.removeItem(LOCAL_KEY); } catch {} },
+} : { get: () => api.get('/api/pi'), post: (r) => api.post('/api/pi', r), del: () => api.del('/api/pi') };
+
+export async function tabPi(p, { section, local = false }) {
+  const st = store(local);
   const MAX = 1000;
   const PI = piDigits(MAX);
   const state = { mode: 'recall', lives: 0, target: 50, chunk: 5, shown: 20 };
@@ -26,7 +36,7 @@ export async function tabPi(p, { section }) {
   const setMode = (m) => { state.mode = m; drawTabs(); drawPlay(); };
   const drawTabs = () => tabs.replaceChildren(...[['learn', 'Apprendre'], ['recall', 'Réciter de mémoire']].map(([k, l]) => h('button', { class: `btn${state.mode === k ? ' primary' : ''}`, onclick: () => setMode(k) }, l)));
 
-  const save = async (r) => { try { await api.post('/api/pi', r); drawHist(); } catch (e) { toast(e.message, 'error'); } };
+  const save = async (r) => { try { await st.post(r); drawHist(); } catch (e) { toast(e.message, 'error'); } };
 
   // ---------- Apprendre : les décimales apparaissent par blocs, on en affiche davantage au fur et à mesure ----------
   const drawLearn = () => {
@@ -85,7 +95,7 @@ export async function tabPi(p, { section }) {
 
   // ---------- Historique ----------
   const drawHist = async () => {
-    let d; try { d = await api.get('/api/pi'); } catch (e) { return hist.replaceChildren(h('div', { class: 'form-err' }, e.message)); }
+    let d; try { d = await st.get(); } catch (e) { return hist.replaceChildren(h('div', { class: 'form-err' }, e.message)); }
     const rec = d.runs.filter((r) => r.mode === 'recall').slice().reverse();
     const bars = h('div', { class: 'pi-bars' }, rec.slice(-30).map((r) => h('div', { class: 'pi-bar', title: `${r.digits} décimales — ${fmtDate(r.at)}`, style: `height:${Math.max(4, (r.digits / Math.max(d.best, 1)) * 60)}px` })));
     hist.replaceChildren(
@@ -97,9 +107,9 @@ export async function tabPi(p, { section }) {
         h('td', { class: 'muted small' }, fmtDate(r.at)), h('td', {}, r.mode === 'recall' ? 'Récitation' : 'Apprentissage'),
         h('td', {}, r.mode === 'recall' ? `${r.digits} / ${r.target} décimales` : `${r.digits} décimales vues`), h('td', { class: 'muted small' }, fmtT(r.seconds)),
         h('td', { class: 'muted small' }, r.mode === 'recall' ? (r.errors ? `${r.errors} erreur(s)` : 'sans faute') : ''))))) : h('p', { class: 'muted' }, 'Aucune partie pour l’instant.'),
-      d.runs.length ? h('button', { class: 'btn danger small', onclick: async () => { if (await confirmBox('Effacer tout l’historique du jeu ?')) { await api.del('/api/pi'); drawHist(); } } }, 'Effacer l’historique') : null);
+      d.runs.length ? h('button', { class: 'btn danger small', onclick: async () => { if (await confirmBox('Effacer tout l’historique du jeu ?')) { await st.del(); drawHist(); } } }, 'Effacer l’historique') : null);
   };
 
-  p.append(section('π — apprendre et réciter', 'Entraînez-vous à mémoriser les décimales de π. Votre historique est gardé sur le serveur, pour chaque compte.', tabs, play), section('Historique', null, hist));
+  p.append(section('π — apprendre et réciter', 'Entraînez-vous à mémoriser les décimales de π. ' + (local ? 'Sans compte, votre historique reste dans ce navigateur.' : 'Votre historique est gardé sur le serveur, pour votre compte : il est commun à toutes vos pages π.'), tabs, play), section('Historique', null, hist));
   drawTabs(); drawPlay(); drawHist();
 }
