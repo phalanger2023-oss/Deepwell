@@ -299,7 +299,7 @@ const RUN = {
     if (buffer.length > 95 * 1024 * 1024) throw Object.assign(err('PDF trop gros pour PDM (95 Mo maximum).'), { fatal: true });
     const folder = [cleanName(ctx.db.title, 'Sans titre'), subjectOf(ctx.db, ctx.support), cleanName(ctx.support.title, 'Sans titre'),
       ...(ctx.isAddendum ? [ADDENDA_NAME, cleanName(db.prepare('SELECT title FROM pages WHERE id=?').get(f.page_id)?.title, 'Addendum')] : [])].join('/');
-    const out = await pdmUpload(cfg, { buffer, filename: /\.pdf$/i.test(f.name) ? f.name : `${f.name}.pdf`, folder, source: `deepwell:${f.id}` });
+    const out = await pdmUpload(cfg, { buffer, filename: /\.pdf$/i.test(f.name) ? f.name : `${f.name}.pdf`, folder, source: `deepwell:${f.id}`, user: db.prepare('SELECT id, role FROM users WHERE id=?').get(user_id) || undefined });
     db.prepare('INSERT OR REPLACE INTO school_pdm(file_id,page_id,pdm_name,folder,created_at) VALUES(?,?,?,?,?)').run(f.id, f.page_id, out.name, folder, now());
   },
   /** Addendum : dossier Addenda/<titre> à jour (nom, fichiers déjà envoyés rangés dedans) + petit fichier texte <titre>.txt, remis à jour si le contenu a changé. */

@@ -68,6 +68,15 @@ function applyTheme() {
   document.documentElement.dataset.theme = pref === 'auto' ? '' : pref;
 }
 
+// ================= connexion unique avec PDM =================
+/** PDM renvoie ici (?pdm_return=…) quand on n'y est pas connecté : une fois connecté à DeepWell, on retourne à PDM, connecté. */
+async function pdmHandoff() {
+  const back = new URLSearchParams(location.search).get('pdm_return');
+  if (!back || !S.me) return false;
+  try { const r = await api.post('/api/pdm/sso', { return: back }); location.replace(r.url); return true; }
+  catch (e) { toast(`PDM : ${e.message}`, 'error'); history.replaceState(null, '', location.pathname + location.hash); return false; }
+}
+
 // ================= démarrage =================
 async function boot() {
   try { applySettings(await api.get('/api/settings')); } catch {}
@@ -75,6 +84,7 @@ async function boot() {
   if (location.hash.startsWith('#/public/')) { S.me = me.user; return startShell(true); }
   if (!me.user) return renderAuth(me);
   S.me = me.user;
+  if (await pdmHandoff()) return;
   startShell(false);
 }
 
@@ -90,7 +100,7 @@ function renderAuth(me) {
       e.preventDefault(); err.textContent = '';
       try {
         const r = await api.post(`/api/auth/${mode}`, { email: email.value, password: pw.value, name: name.value, remember: remember.checked });
-        S.me = r.user; startShell(false);
+        S.me = r.user; if (await pdmHandoff()) return; startShell(false);
       } catch (x) { err.textContent = x.message; }
     } },
       h('div', { class: 'logo' }, S.settings.site_name || 'Deepwell'),
