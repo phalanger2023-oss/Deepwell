@@ -4,6 +4,7 @@
  * Créer une ligne « depuis un modèle » copie ses propriétés et ses blocs dans une nouvelle ligne ordinaire.
  */
 import { gcalTouch } from './gcal.js';
+import { schoolAutoTitle } from './school-naming.js';
 import { db, uid, now, tx, parse, textOf, getSetting } from './db.js';
 import { requireAuth } from './auth.js';
 import { accessFor, can } from './access.js';
@@ -354,7 +355,7 @@ export function templatesRoutes(router, { autoProps, defaultProps, schoolPageCha
         return { id: map.get(b.id), parent_id: b.parent_id ? map.get(b.parent_id) || null : null, type: b.type, content };
       }), t);
     });
-    schoolPageChanged(id); gcalTouch(id);
+    schoolAutoTitle(id); schoolPageChanged(id); gcalTouch(id);
     res.json({ id, title: db.prepare('SELECT title FROM pages WHERE id=?').get(id).title, icon: tpl.icon, props: parse(db.prepare('SELECT props FROM pages WHERE id=?').get(id).props, {}) });
   });
 

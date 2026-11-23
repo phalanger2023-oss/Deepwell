@@ -73,7 +73,7 @@ test('Google Agenda : création, modification, suppression, verrouillage, agenda
 
   assert.equal(CAL.size, 1); assert.equal([...CAL.values()][0].summary, 'DeepWell');
   let evs = events(); assert.equal(evs.length, 4); // secrète et sans date exclues
-  const by = (t) => evs.find((e) => e.summary === t);
+  const by = (t) => evs.find((e) => e.summary === t || e.summary.startsWith(t + ' — '));
   assert.deepEqual(by('Devoir de maths p.12').start, { date: '2026-12-01' }); assert.deepEqual(by('Devoir de maths p.12').end, { date: '2026-12-02' });
   assert.match(by('Devoir de maths p.12').description, /Matière : Maths/); assert.match(by('Devoir de maths p.12').description, new RegExp(`https://dw.test/#/page/${hw.id}`));
   assert.equal(by('Présentation orale').start.dateTime, '2026-12-03T13:00:00.000Z'); assert.equal(by('Présentation orale').end.dateTime, '2026-12-03T14:00:00.000Z'); // sans fin : 1 h
@@ -88,7 +88,7 @@ test('Google Agenda : création, modification, suppression, verrouillage, agenda
   // renommer + changer la date → l'événement est modifié, pas dupliqué
   await api('PATCH', `/api/pages/${hw.id}`, { title: 'Devoir de maths p.14', props: { Date: date('2026-12-02'), Matière: { type: 'select', select: { name: 'Maths' } } } });
   await flush(); evs = events(); assert.equal(evs.length, 4);
-  assert.ok(evs.find((e) => e.summary === 'Devoir de maths p.14' && e.start.date === '2026-12-02'));
+  assert.ok(evs.find((e) => e.summary.startsWith('Devoir de maths p.14') && e.start.date === '2026-12-02'));
 
   // retirer la date / corbeille / verrouiller → événement supprimé ; déverrouiller → recréé
   await api('PATCH', `/api/pages/${exam.id}`, { props: { Date: null } }); await flush(); assert.equal(events().length, 3);
@@ -99,14 +99,14 @@ test('Google Agenda : création, modification, suppression, verrouillage, agenda
   // un événement supprimé à la main chez Google est recréé ; l'agenda supprimé aussi
   const cal = [...CAL.values()][0]; cal.events.clear(); await api('POST', `/api/gcal/${dbp.id}/sync`); await flush(); // rien à faire en base → mais la base sait ce qu'elle a envoyé
   assert.equal(events().length, 0); // la réconciliation ne regarde pas Google : le prochain changement de la ligne recrée
-  await api('PATCH', `/api/pages/${hw.id}`, { title: 'Devoir bis' }); await flush(); assert.ok(events().some((e) => e.summary === 'Devoir bis'));
+  await api('PATCH', `/api/pages/${hw.id}`, { title: 'Devoir bis' }); await flush(); assert.ok(events().some((e) => e.summary.startsWith('Devoir bis')));
   CAL.clear(); await api('PATCH', `/api/pages/${hw.id}`, { title: 'Devoir ter' }); await flush();
-  assert.equal(CAL.size, 1); assert.ok(events().some((e) => e.summary === 'Devoir ter'));
+  assert.equal(CAL.size, 1); assert.ok(events().some((e) => e.summary.startsWith('Devoir ter')));
 
   // panne Google : tâche réessayée, jamais de doublon
   down = true; await api('PATCH', `/api/pages/${hw.id}`, { title: 'Devoir panne' }); await flush();
   assert.match((await api('GET', `/api/gcal/${dbp.id}`)).body.error || '', /panne simulée|Google Agenda/);
-  down = false; await flush(); assert.ok(events().some((e) => e.summary === 'Devoir panne')); assert.equal(events().filter((e) => /Devoir/.test(e.summary)).length, 1);
+  down = false; await flush(); assert.ok(events().some((e) => e.summary.startsWith('Devoir panne'))); assert.equal(events().filter((e) => /Devoir/.test(e.summary)).length, 1);
 
   // désactiver : tout ce que DeepWell avait créé disparaît
   assert.equal((await api('PUT', `/api/gcal/${dbp.id}`, { enabled: false })).status, 200); await flush();

@@ -89,6 +89,10 @@ function propLine(name, p) {
   return val ? `${name} : ${val}` : null;
 }
 
+/** Dans Google Agenda uniquement (jamais dans les bases) : TST → test, DVR → devoir, PRP → devoir côté. */
+const AGENDA_WORDS = { TST: 'test', DVR: 'devoir', PRP: 'devoir côté' };
+export const agendaWords = (text) => String(text ?? '').replace(/(?<![A-Za-zÀ-ÿ0-9])(TST|DVR|PRP)(?![A-Za-zÀ-ÿ0-9])/g, (m) => AGENDA_WORDS[m]);
+
 /** Événements voulus pour une base : page_id → {summary, description, start, end}. */
 export function desiredEvents(databaseId, cfg) {
   const dbRow = db.prepare('SELECT schema FROM pages WHERE id=?').get(databaseId), schema = parse(dbRow?.schema, {}) || {};
@@ -101,9 +105,11 @@ export function desiredEvents(databaseId, cfg) {
     const props = parse(r.props, {});
     const times = eventTimes(props?.[cfg.date_prop]?.date, cfg.tz);
     if (!times || (locked && locked.get(r.id))) continue;
-    const lines = textProps.map((k) => propLine(k, props[k])).filter(Boolean);
+    const lines = textProps.map((k) => propLine(k, props[k])).filter(Boolean).map(agendaWords);
+    const subjKey = Object.keys(schema).find((k) => /^mati/i.test(k.normalize('NFD').replace(/[\u0300-\u036f]/g, '')) && ['select', 'status'].includes(schema[k].type)), subject = subjKey ? props[subjKey]?.[schema[subjKey].type]?.name : '';
     if (appUrl()) lines.push(`Ouvrir dans DeepWell : ${appUrl()}/#/page/${r.id}`);
-    out.set(r.id, { summary: (r.title || '').trim() || 'Sans titre', description: lines.join('\n'), ...times, extendedProperties: { private: { dw_page: r.id, dw_db: databaseId } } });
+    const base = agendaWords((r.title || '').trim() || 'Sans titre'); // la matière (propriété) est précisée dans le titre de l'événement
+    out.set(r.id, { summary: subject && !base.toLowerCase().includes(subject.toLowerCase()) ? `${base} — ${subject}` : base, description: lines.join('\n'), ...times, extendedProperties: { private: { dw_page: r.id, dw_db: databaseId } } });
   }
   return out;
 }

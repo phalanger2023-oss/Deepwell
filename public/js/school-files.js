@@ -145,6 +145,7 @@ export async function mountSchoolFiles(host, page) {
       for (const [i, file] of files.entries()) {
         const d = await uploadToDrive(file, s.folder_id, s.token, (p) => { busy = `Envoi ${i + 1}/${files.length} : ${Math.round(p * 100)} %`; status.textContent = busy; });
         const saved = await api.post(`/api/school/pages/${page.id}/files`, { drive_id: d.id, ...(annotates ? { annotates } : {}) });
+        if (saved.duplicate) { toast(`« ${saved.name} » est déjà dans la liste : la copie n’a pas été gardée`); continue; }
         if (info.pdm && /pdf/i.test(saved.mime || saved.name)) saved.pdm_pending = true;
         info.files.push(saved); if (!info.is_addendum) (info.all_files ||= []).push({ ...saved, where: '' });
         draw();

@@ -10,7 +10,9 @@ export function cleanSchool(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
   const options = {};
   for (const k of SCHOOL_OPTIONS) options[k] = v.options?.[k] === true;
-  return { enabled: v.enabled === true, options };
+  const abbrevs = {};
+  if (v.abbrevs && typeof v.abbrevs === 'object' && !Array.isArray(v.abbrevs)) for (const [k, a] of Object.entries(v.abbrevs).slice(0, 80)) if (typeof a === 'string' && a.trim()) abbrevs[String(k).slice(0, 80)] = a.trim().toUpperCase().slice(0, 6); // abréviation de chaque matière (titres automatiques)
+  return { enabled: v.enabled === true, options, ...(Object.keys(abbrevs).length ? { abbrevs } : {}) };
 }
 
 /** Normalise les props d'une page avant enregistrement (seul `dw_school` est contrôlé, le reste est inchangé). */

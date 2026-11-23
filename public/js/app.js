@@ -573,7 +573,7 @@ async function showPage(id) {
   if (data.parentSchema) { // ligne de base de données : propriétés
     const sch = data.parentSchema, tk = titleKey(sch);
     const box = h('div', { class: 'props' }, Object.keys(sch).filter((k) => k !== tk).map((k) => h('div', { class: 'prop' }, h('label', { class: 'prop-label', title: k }, vi(typeIcon(sch[k].type), 15), h('span', {}, k)),
-      propEditor(sch[k], page.props?.[k], editable, async (np) => { page.props = { ...page.props, [k]: np }; try { await api.patch(`/api/pages/${page.id}`, { props: page.props }); } catch (e) { toast(e.message, 'error'); } }, async () => { await api.patch(`/api/pages/${data.crumbs.at(-1)?.id}`, { schema: sch }); }))));
+      propEditor(sch[k], page.props?.[k], editable, async (np) => { page.props = { ...page.props, [k]: np }; try { const r = await api.patch(`/api/pages/${page.id}`, { props: page.props }); if (r?.title) { toast(`Titre : ${r.title}`); refreshTree(); showPage(page.id); } } catch (e) { toast(e.message, 'error'); } }, async () => { await api.patch(`/api/pages/${data.crumbs.at(-1)?.id}`, { schema: sch }); }))));
     parts[1].append(box);
   }
   if (page.kind === 'template') {
@@ -673,6 +673,8 @@ async function showPage(id) {
           toast(`Page ajoutée dans « ${prettify(d.page.title) || 'la base'} »`);
           if (a.open) { await flushSave(); location.hash = `#/page/${row.id}`; }
         } else if (a.type === 'add_subpage') {
+          // mode scolaire : le titre « Addendum du <date> » devient « Addendum #<n° P.S.A.>/<nn>-<année>-<matière> » (le nom se tape ensuite)
+          if (/^Addendum du /i.test(a.title || '') || /\{\{\s*matricule_addendum\s*\}\}/.test(a.title || '')) { try { const t = (await api.get(`/api/school/titles/addendum?page_id=${page.id}`)).title; if (t) a = { ...a, title: t }; } catch { /* hors mode scolaire : titre d'origine */ } }
           const p = await api.post('/api/pages', { parent_id: page.id, title: a.title || '' });
           let blocks = null;
           if (a.template_page_id) { // modèle : le contenu d'une autre page est copié (blocs neufs ; « @Today » du modèle → date du jour)

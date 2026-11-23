@@ -1,7 +1,7 @@
 /**
  * Mode scolaire × Google Drive (étape 2).
- * - Un « support » (ligne d'une base scolaire) = un dossier Drive : DeepWell Cours / <Année = titre de la base> / <Matière> / <Support>,
- *   avec deux sous-dossiers, créés au premier envoi : « Document principal » (fichiers de la page du chapitre) et « Addenda » (fichiers des sous-pages).
+ * - Un « support » (ligne d'une base scolaire) = un dossier Drive : DeepWell Cours / <Matière> / <Support>,
+ *   avec deux sous-dossiers, créés au premier envoi : « Document principal » (fichiers de la page du chapitre) et « Registre des addenda » (un dossier par addendum).
  * - Les fichiers vont directement du navigateur vers Drive (jeton temporaire) ; le serveur ne garde que les informations
  *   (identifiant Drive, nom, type, taille, date).
  * - Renommage / changement de matière / suppression définitive d'un support sont répercutés sur Drive (sens unique ; Drive ne reçoit
@@ -20,6 +20,7 @@ import { enqueueJob, registerJob, runDueJobs } from './jobs.js';
 import { pdmConfig, pdmUpload, pdmLinks } from './pdm.js';
 import { blocksToMarkdown } from './addendum-md.js';
 import { isLegacyRow } from './templates.js';
+import { addendumTitle } from './school-naming.js';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS school_dirs(user_id TEXT NOT NULL, key TEXT NOT NULL, drive_id TEXT NOT NULL, PRIMARY KEY(user_id, key));
@@ -53,12 +54,20 @@ async function dcall(token, method, url, body) {
   if (!r.ok) throw err(`Google Drive : ${j.error?.message || r.status}`, 502, { drive: r.status });
   return j;
 }
+/** Une seule opération à la fois par clé : deux requêtes simultanées (dossier + envoi, tâche de fond…) ne créent plus deux dossiers Drive identiques. */
+const chains = new Map();
+const once = (key, fn) => {
+  const run = (chains.get(key) || Promise.resolve()).catch(() => {}).then(fn);
+  chains.set(key, run); run.finally(() => { if (chains.get(key) === run) chains.delete(key); }).catch(() => {});
+  return run;
+};
 const qs = (s) => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const createFolder = async (token, name, parent) =>
   (await dcall(token, 'POST', `${API}/files?fields=id`, { name, mimeType: FOLDER, ...(parent ? { parents: [parent] } : {}) })).id;
 
 /** Dossier « partagé » (racine, année, matière, Addenda) : retrouvé par son nom ou créé, puis mémorisé. */
-async function sharedFolder(token, userId, key, name, parent) {
+async function sharedFolder(token, userId, key, name, parent) { return once(`shared:${userId}:${key}`, () => sharedFolder0(token, userId, key, name, parent)); }
+async function sharedFolder0(token, userId, key, name, parent) {
   const cached = db.prepare('SELECT drive_id FROM school_dirs WHERE user_id=? AND key=?').get(userId, key);
   if (cached) return cached.drive_id;
   const found = await dcall(token, 'GET', `${API}/files?pageSize=1&fields=files(id)&q=${encodeURIComponent(
@@ -96,13 +105,13 @@ export function subjectOf(dbPage, row) {
 
 async function subjectFolder(token, userId, ctx) {
   const root = await sharedFolder(token, userId, 'root', ROOT_NAME, null);
-  const year = await sharedFolder(token, userId, `year:${ctx.db.id}`, cleanName(ctx.db.title, 'Sans titre'), root);
-  const subject = subjectOf(ctx.db, ctx.support);
-  return sharedFolder(token, userId, `subject:${ctx.db.id}:${subject}`, subject, year);
+  const subject = subjectOf(ctx.db, ctx.support); // organisation : DeepWell Cours / Matière / Support (plus de dossier « année »)
+  return sharedFolder(token, userId, `subj:${subject}`, subject, root);
 }
 
 /** Dossier du support (créé si besoin). Chaque support a son propre dossier, même si deux supports portent le même titre. */
-export async function ensureSupportFolder(userId, ctx, token) {
+export function ensureSupportFolder(userId, ctx, token) { return once(`support:${ctx.support.id}`, () => ensureSupportFolder0(userId, ctx, token)); }
+async function ensureSupportFolder0(userId, ctx, token) {
   token = token || await accessToken(userId);
   let row = db.prepare('SELECT * FROM school_folders WHERE page_id=?').get(ctx.support.id);
   if (row) {
@@ -120,26 +129,33 @@ export async function ensureSupportFolder(userId, ctx, token) {
 }
 
 if (!db.prepare('PRAGMA table_info(school_files)').all().some((c) => c.name === 'annotates')) db.exec('ALTER TABLE school_files ADD COLUMN annotates TEXT'); // version annotée (ex. faite sur Canva) d\'un PDF d\'origine
+if (!db.prepare('PRAGMA table_info(school_folders)').all().some((c) => c.name === 'addenda_name')) db.exec('ALTER TABLE school_folders ADD COLUMN addenda_name TEXT'); // nom actuel du dossier des addenda sur Drive (réorganisation)
 if (!db.prepare('PRAGMA table_info(school_folders)').all().some((c) => c.name === 'main_id')) db.exec('ALTER TABLE school_folders ADD COLUMN main_id TEXT');
 /** Sous-dossier « Document principal » : les fichiers de la page du chapitre elle-même (créé au premier envoi). */
-async function ensureMain(token, row) {
+function ensureMain(token, row) { return once(`main:${row.page_id}`, () => ensureMain0(token, row)); }
+async function ensureMain0(token, row) {
+  row = db.prepare('SELECT * FROM school_folders WHERE page_id=?').get(row.page_id) || row;
   if (row.main_id) return row.main_id;
   const id = await createFolder(token, 'Document principal', row.drive_id);
   db.prepare('UPDATE school_folders SET main_id=? WHERE page_id=?').run(id, row.page_id);
   row.main_id = id;
   return id;
 }
-async function ensureAddenda(token, row) {
+function ensureAddenda(token, row) { return once(`addenda:${row.page_id}`, () => ensureAddenda0(token, row)); }
+export const ADDENDA_NAME = 'Registre des addenda';
+async function ensureAddenda0(token, row) {
+  row = db.prepare('SELECT * FROM school_folders WHERE page_id=?').get(row.page_id) || row;
   if (row.addenda_id) return row.addenda_id;
-  const id = await createFolder(token, 'Addenda', row.drive_id);
-  db.prepare('UPDATE school_folders SET addenda_id=? WHERE page_id=?').run(id, row.page_id);
+  const id = await createFolder(token, ADDENDA_NAME, row.drive_id);
+  db.prepare('UPDATE school_folders SET addenda_id=?, addenda_name=? WHERE page_id=?').run(id, ADDENDA_NAME, row.page_id);
   return id;
 }
 /**
  * Dossier d'un addendum : Addenda / <titre de la page> (même nom que dans DeepWell ; « (2) » si deux addenda portent le même titre).
  * Il contient les fichiers joints et un petit résumé écrit (<titre>.md).
  */
-async function ensureAddendumDir(token, userId, ctx, row, pageId) {
+function ensureAddendumDir(token, userId, ctx, row, pageId) { return once(`adddir:${pageId}`, () => ensureAddendumDir0(token, userId, ctx, row, pageId)); }
+async function ensureAddendumDir0(token, userId, ctx, row, pageId) {
   const parent = await ensureAddenda(token, row);
   let a = db.prepare('SELECT * FROM school_addenda WHERE page_id=?').get(pageId);
   if (a) {
@@ -205,6 +221,22 @@ async function attempt(type, payload) {
   try { await RUN[type](payload); return true; }
   catch (e) { enqueueJob(type, payload, { delayMs: 30_000, dedupeKey: `${type}:${payload.drive_id || payload.page_id}` }); return false; }
 }
+/** Fichiers en double d'une page (même nom, même taille, même type) : le plus ancien reste ; les autres sont retirés de DeepWell et mis à la corbeille de Drive (fichiers envoyés seulement). */
+function duplicateFiles(pageId) {
+  const seen = new Map(), dups = [];
+  for (const f of db.prepare('SELECT * FROM school_files WHERE page_id=? ORDER BY created_at, id').all(pageId)) {
+    if (f.mime === FOLDER) continue;
+    const k = `${f.name.toLowerCase()}|${f.size}|${f.mime}`;
+    if (seen.has(k)) dups.push(f); else seen.set(k, f);
+  }
+  return dups;
+}
+async function RUN_DEDUPE(token, userId, pageId) {
+  for (const f of duplicateFiles(pageId)) {
+    if (f.kind === 'upload') { try { await dcall(token, 'PATCH', `${API}/files/${f.drive_id}?fields=id`, { trashed: true }); } catch (e) { if (e.drive !== 404) throw e; } }
+    db.prepare('DELETE FROM school_files WHERE id=?').run(f.id);
+  }
+}
 const RUN = {
   async 'school.ensure_folder'({ page_id, user_id }) {
     const ctx = schoolContext(page_id);
@@ -225,13 +257,14 @@ const RUN = {
     const cfg = pdmConfig(); if (!cfg) return; // PDM n'est plus configuré : rien à faire
     const f = db.prepare('SELECT * FROM school_files WHERE id=?').get(file_id);
     if (!f || db.prepare('SELECT 1 FROM school_pdm WHERE file_id=?').get(file_id)) return;
-    const ctx = schoolContext(f.page_id); if (!ctx || ctx.isAddendum || !ctx.cfg.options?.pdf) return;
+    const ctx = schoolContext(f.page_id); if (!ctx || !ctx.cfg.options?.pdf) return; // chapitre ET addenda
     const token = await accessToken(user_id);
     const r = await fetch(`${API}/files/${f.drive_id}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
     if (!r.ok) throw err(`Google Drive : ${r.status}`, 502, { drive: r.status });
     const buffer = Buffer.from(await r.arrayBuffer());
     if (buffer.length > 95 * 1024 * 1024) throw Object.assign(err('PDF trop gros pour PDM (95 Mo maximum).'), { fatal: true });
-    const folder = [cleanName(ctx.db.title, 'Sans titre'), subjectOf(ctx.db, ctx.support), cleanName(ctx.support.title, 'Sans titre')].join('/');
+    const folder = [cleanName(ctx.db.title, 'Sans titre'), subjectOf(ctx.db, ctx.support), cleanName(ctx.support.title, 'Sans titre'),
+      ...(ctx.isAddendum ? ['Addenda', cleanName(db.prepare('SELECT title FROM pages WHERE id=?').get(f.page_id)?.title, 'Addendum')] : [])].join('/');
     const out = await pdmUpload(cfg, { buffer, filename: /\.pdf$/i.test(f.name) ? f.name : `${f.name}.pdf`, folder, source: `deepwell:${f.id}` });
     db.prepare('INSERT OR REPLACE INTO school_pdm(file_id,page_id,pdm_name,folder,created_at) VALUES(?,?,?,?,?)').run(f.id, f.page_id, out.name, folder, now());
   },
@@ -271,6 +304,21 @@ const RUN = {
     if (!a.doc_id) a.doc_id = (await uploadBuffer(token, a.drive_id, docName, 'text/markdown', buf)).id;
     db.prepare('UPDATE school_addenda SET doc_id=?, doc_hash=? WHERE page_id=?').run(a.doc_id, hash, page_id);
   },
+  /** Réorganisation d'un support : dossier déplacé vers Matière / Support, dossier des addenda renommé « Registre des addenda », fichiers en double retirés. */
+  async 'school.reorganize'({ page_id, user_id }) {
+    const row = db.prepare('SELECT * FROM school_folders WHERE page_id=?').get(page_id), ctx = row && schoolContext(page_id);
+    if (!row || !ctx?.drive || ctx.support.id !== page_id) return;
+    const token = await accessToken(user_id), parent = await subjectFolder(token, user_id, ctx);
+    if (row.parent_id !== parent) {
+      await dcall(token, 'PATCH', `${API}/files/${row.drive_id}?fields=id&addParents=${parent}${row.parent_id ? `&removeParents=${row.parent_id}` : ''}`, {});
+      db.prepare('UPDATE school_folders SET parent_id=? WHERE page_id=?').run(parent, page_id);
+    }
+    if (row.addenda_id && row.addenda_name !== ADDENDA_NAME) {
+      try { await dcall(token, 'PATCH', `${API}/files/${row.addenda_id}?fields=id`, { name: ADDENDA_NAME }); } catch (e) { if (e.drive !== 404) throw e; }
+      db.prepare('UPDATE school_folders SET addenda_name=? WHERE page_id=?').run(ADDENDA_NAME, page_id);
+    }
+    for (const pid of descendants(page_id)) await RUN_DEDUPE(token, user_id, pid);
+  },
   async 'school.trash'({ user_id, drive_id }) {
     try { await dcall(await accessToken(user_id), 'PATCH', `${API}/files/${drive_id}?fields=id`, { trashed: true }); }
     catch (e) { if (e.drive !== 404) throw e; } // déjà supprimé sur Drive : rien à faire
@@ -298,7 +346,7 @@ const RUN = {
         addFile(pid, meta, 'link');
       }
     }
-    queuePdm(page_id, user_id);
+    for (const pid of descendants(page_id)) queuePdm(pid, user_id);
   },
 };
 for (const [type, fn] of Object.entries(RUN)) registerJob(type, fn);
@@ -307,9 +355,9 @@ const isPdf = (f) => f.mime !== FOLDER && (/pdf/i.test(f.mime) || /\.pdf$/i.test
 /** Les PDF du support (page principale, pas les addenda) pas encore envoyés à PDM sont mis en file. Renvoie leur nombre. */
 export function queuePdm(pageId, userId, dry = false) {
   const ctx = schoolContext(pageId);
-  if (!ctx?.drive || ctx.isAddendum || !ctx.cfg.options?.pdf || !pdmConfig()) return 0;
+  if (!ctx?.drive || !ctx.cfg.options?.pdf || !pdmConfig()) return 0;
   let n = 0;
-  for (const f of db.prepare('SELECT * FROM school_files WHERE page_id=?').all(ctx.support.id)) {
+  for (const f of db.prepare('SELECT * FROM school_files WHERE page_id=?').all(pageId)) { // la page elle-même (chapitre ou addendum)
     if (!isPdf(f) || db.prepare('SELECT 1 FROM school_pdm WHERE file_id=?').get(f.id)) continue;
     n++; if (!dry) enqueueJob('school.pdm_send', { file_id: f.id, user_id: userId }, { maxAttempts: 6, dedupeKey: `pdm:${f.id}` });
   }
@@ -321,7 +369,7 @@ export function schoolPdmBackfill(databaseId, userId, dry = false) {
   const d = db.prepare('SELECT props FROM pages WHERE id=?').get(databaseId), cfg = parse(d?.props, {})?.dw_school;
   if (!cfg?.enabled || !cfg.options?.drive || !cfg.options?.pdf || !pdmConfig()) return { enabled: false, files: 0 };
   let files = 0;
-  for (const r of db.prepare("SELECT id FROM pages WHERE parent_id=? AND kind='page' AND archived=0").all(databaseId)) files += queuePdm(r.id, userId, dry);
+  for (const r of db.prepare("SELECT id FROM pages WHERE parent_id=? AND kind='page' AND archived=0").all(databaseId)) for (const pid of descendants(r.id)) files += queuePdm(pid, userId, dry); // chapitres et addenda
   return { enabled: true, files };
 }
 
@@ -362,12 +410,21 @@ export function schoolPagesDeleting(pageId) {
   for (const id of descendants(pageId)) {
     const row = db.prepare('SELECT user_id,drive_id FROM school_folders WHERE page_id=?').get(id);
     if (row) enqueueJob('school.trash', { user_id: row.user_id, drive_id: row.drive_id });
+    const add = db.prepare('SELECT user_id,drive_id FROM school_addenda WHERE page_id=?').get(id); // addendum supprimé seul : son dossier (fichiers + résumé) part aussi à la corbeille de Drive
+    if (add) enqueueJob('school.trash', { user_id: add.user_id, drive_id: add.drive_id });
   }
 }
 
 // ---------- API ----------
 export const schoolRouter = express.Router();
 schoolRouter.use(requireAuth);
+
+/** Titre proposé pour un nouvel addendum créé depuis cette page (null hors mode scolaire). */
+schoolRouter.get('/titles/addendum', (req, res) => {
+  const id = String(req.query.page_id || '');
+  if (!can(accessFor(req.user, id), 'view')) return res.status(404).json({ error: 'Page introuvable' });
+  res.json({ title: addendumTitle(id) });
+});
 
 function need(req, pageId, level) {
   const role = accessFor(req.user, pageId);
@@ -387,15 +444,15 @@ schoolRouter.get('/pages/:id', wrap(async (req, res) => {
   const folder = db.prepare('SELECT drive_id,addenda_id,user_id FROM school_folders WHERE page_id=?').get(ctx.support.id);
   const files = db.prepare('SELECT * FROM school_files WHERE page_id=? ORDER BY created_at').all(req.params.id).map(fileRow);
   const pcfg = ctx.cfg.options?.pdf ? pdmConfig() : null;
-  if (pcfg && !ctx.isAddendum) { // liens PDM : éditeur (version annotée) et PDF d'origine ; « en attente » tant que le dépôt n'est pas fait
+  if (pcfg) { // liens PDM (chapitre et addenda) : éditeur (version annotée) et PDF d'origine ; « en attente » tant que le dépôt n'est pas fait
     const rows = new Map(db.prepare('SELECT * FROM school_pdm WHERE page_id=?').all(req.params.id).map((r) => [r.file_id, r]));
     for (const f of files) { const r = rows.get(f.id); if (r) f.pdm = pdmLinks(pcfg, r.pdm_name); else if (isPdf(f)) f.pdm_pending = true; }
   }
   const sup = db.prepare('SELECT created_at,props FROM pages WHERE id=?').get(req.params.id);
-  const out = { applicable: true, legacy: !ctx.isAddendum && isLegacyRow(sup.created_at, parse(sup.props, {})), is_addendum: ctx.isAddendum, support_id: ctx.support.id, drive_connected: hasDrive(req.user.id), folder: !!folder, files, editable: can(role, 'edit'), pdm: !!pcfg && !ctx.isAddendum };
+  const out = { applicable: true, legacy: !ctx.isAddendum && isLegacyRow(sup.created_at, parse(sup.props, {})), is_addendum: ctx.isAddendum, support_id: ctx.support.id, drive_connected: hasDrive(req.user.id), folder: !!folder, files, editable: can(role, 'edit'), pdm: !!pcfg };
   if (!ctx.isAddendum) { // « Tout télécharger » : fichiers du support et de ses addendums
     out.all_files = db.prepare(`SELECT f.*, p.title AS page_title FROM school_files f JOIN pages p ON p.id=f.page_id WHERE f.page_id IN (${descendants(ctx.support.id).map(() => '?').join(',')}) ORDER BY f.created_at`)
-      .all(...descendants(ctx.support.id)).filter((f) => f.mime !== FOLDER).map((f) => ({ ...fileRow(f), where: f.page_id === ctx.support.id ? '' : `Addenda/${cleanName(f.page_title, 'Addendum')}` }));
+      .all(...descendants(ctx.support.id)).filter((f) => f.mime !== FOLDER).map((f) => ({ ...fileRow(f), where: f.page_id === ctx.support.id ? '' : `${ADDENDA_NAME}/${cleanName(f.page_title, 'Addendum')}` }));
   }
   res.json(out);
 }));
@@ -434,6 +491,10 @@ schoolRouter.post('/pages/:id/files', wrap(async (req, res) => {
     if (!orig || !isPdf(orig) || orig.annotates) throw err('Le document d’origine est introuvable (ou n’est pas un PDF).', 404);
     if (db.prepare('SELECT 1 FROM school_files WHERE annotates=?').get(orig.id)) throw err('Ce document a déjà une version annotée : retire-la d’abord pour en ajouter une autre.', 409);
   }
+  if (!req.body?.annotates) { // même fichier envoyé deux fois (nom, taille et type identiques) : la copie est mise à la corbeille de Drive, l'existante est conservée
+    const dup = db.prepare("SELECT * FROM school_files WHERE page_id=? AND drive_id != ? AND kind='upload' AND lower(name)=lower(?) AND size=? AND mime=?").get(req.params.id, f.id, f.name || '', Number(f.size) || 0, f.mimeType || '');
+    if (dup) { await attempt('school.trash', { user_id: req.user.id, drive_id: f.id }); return res.json({ ...fileRow(dup), duplicate: true }); }
+  }
   let saved = addFile(req.params.id, f, 'upload');
   if (orig) {
     const name = cleanName(orig.name.replace(/\.pdf$/i, ''), 'Document') + ' (annoté).pdf';
@@ -442,7 +503,7 @@ schoolRouter.post('/pages/:id/files', wrap(async (req, res) => {
     await attempt('school.rename_file', { user_id: req.user.id, drive_id: saved.drive_id, name });
   }
   res.json(fileRow(saved));
-  if (!ctx.isAddendum) queuePdm(ctx.support.id, req.user.id); // PDF de référence : déposé dans PDM (si l'option est active)
+  queuePdm(req.params.id, req.user.id); // PDF : déposé dans PDM (si l'option est active), chapitre comme addendum
 }));
 
 schoolRouter.patch('/files/:fid', wrap(async (req, res) => {
@@ -481,7 +542,7 @@ function importPlan(req, databaseId) {
       for (const d of s.drive.values()) d.folder ? folders++ : drive++;
       for (const fid of s.server) if ((db.prepare('SELECT size FROM files WHERE id=?').get(fid)?.size || 0) > MAX_SERVER_UPLOAD) tooBig++;
     }
-    return { id: r.id, title: cleanName(r.title, 'Sans titre'), path: `${ROOT_NAME} / ${year} / ${subjectOf(dbp, r)} / ${cleanName(r.title, 'Sans titre')}`,
+    return { id: r.id, title: cleanName(r.title, 'Sans titre'), path: `${ROOT_NAME} / ${subjectOf(dbp, r)} / ${cleanName(r.title, 'Sans titre')}`,
       has_folder: !!db.prepare('SELECT 1 FROM school_folders WHERE page_id=?').get(r.id), addenda, drive_files: drive, drive_folders: folders, canva_links: canva, server_files: server, too_big: tooBig };
   });
   const sum = (k) => supports.reduce((n, s) => n + s[k], 0);
@@ -503,4 +564,36 @@ schoolRouter.get('/import/status', wrap(async (req, res) => {
   const count = (s) => rows.filter((r) => r.status === s).length;
   res.json({ total: rows.length, done: count('done'), waiting: count('pending') + count('running'), failed: count('failed'),
     errors: rows.filter((r) => r.status === 'failed').slice(0, 5).map((r) => r.last_error) });
+}));
+
+// ----- réorganisation des dossiers Drive : « DeepWell Cours / Matière / Support / (Document principal + Registre des addenda / addendum) » -----
+function reorgPlan(req, databaseId) {
+  const dbp = db.prepare('SELECT id,kind,title,props,schema FROM pages WHERE id=?').get(databaseId);
+  if (!dbp || dbp.kind !== 'database' || !can(accessFor(req.user, databaseId), 'edit')) throw err('Base introuvable', 404);
+  const cfg = parse(dbp.props, {})?.dw_school;
+  if (!cfg?.enabled || cfg.options?.drive !== true) throw err('Activez d’abord le Mode scolaire et le stockage Drive dans les réglages de la base.', 409);
+  const supports = [];
+  for (const r of db.prepare("SELECT id,title,props FROM pages WHERE parent_id=? AND archived=0 AND kind='page' ORDER BY position").all(databaseId)) {
+    const f = db.prepare('SELECT * FROM school_folders WHERE page_id=?').get(r.id);
+    if (!f) continue;
+    const subject = subjectOf(dbp, r), cached = db.prepare('SELECT drive_id FROM school_dirs WHERE user_id=? AND key=?').get(f.user_id, `subj:${subject}`);
+    const duplicates = descendants(r.id).reduce((n, pid) => n + duplicateFiles(pid).length, 0);
+    const move = !cached || f.parent_id !== cached.drive_id, rename = !!f.addenda_id && f.addenda_name !== ADDENDA_NAME;
+    if (move || rename || duplicates) supports.push({ id: r.id, title: cleanName(r.title, 'Sans titre'), from: 'ancienne organisation (si Année / Matière / …)', to: `${ROOT_NAME} / ${subject} / ${cleanName(r.title, 'Sans titre')}`, move, rename_addenda: rename, duplicates });
+  }
+  return { database_id: databaseId, supports, totals: { supports: supports.length, moves: supports.filter((s) => s.move).length, renames: supports.filter((s) => s.rename_addenda).length, duplicates: supports.reduce((n, s) => n + s.duplicates, 0) } };
+}
+/** Essai à blanc : ce qui serait fait. Ne modifie rien, n'appelle pas Google. */
+schoolRouter.post('/reorganize/preview', wrap(async (req, res) => res.json(reorgPlan(req, String(req.body?.database_id || '')))));
+schoolRouter.post('/reorganize/run', wrap(async (req, res) => {
+  const plan = reorgPlan(req, String(req.body?.database_id || '')); needDrive(req);
+  const batch = uid();
+  for (const s of plan.supports) enqueueJob('school.reorganize', { page_id: s.id, user_id: req.user.id, batch }, { maxAttempts: 6 });
+  res.json({ batch, total: plan.supports.length });
+  setTimeout(() => runDueJobs().catch(() => {}), 50).unref();
+}));
+schoolRouter.get('/reorganize/status', wrap(async (req, res) => {
+  const rows = db.prepare("SELECT status,last_error FROM jobs WHERE type='school.reorganize' AND json_extract(payload,'$.batch')=? AND json_extract(payload,'$.user_id')=?").all(String(req.query.batch || ''), req.user.id);
+  const count = (st) => rows.filter((r) => r.status === st).length;
+  res.json({ total: rows.length, done: count('done'), waiting: count('pending') + count('running'), failed: count('failed'), errors: rows.filter((r) => r.status === 'failed').slice(0, 5).map((r) => r.last_error) });
 }));

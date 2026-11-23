@@ -12,6 +12,7 @@ import { gcalTouch } from './gcal.js';
 import { lockRouter, lockGuard, lockedIds, closedIds, lockFor } from './locks.js';
 import { cleanProps } from './school.js';
 import { isLegacyRow } from './templates.js';
+import { schoolAutoTitle } from './school-naming.js';
 import { schoolPageChanged, schoolPagesDeleting, schoolPdmBackfill, schoolAddendumChanged, schoolAddendaBackfill } from './school-drive.js';
 import { templatesRoutes } from './templates.js';
 
@@ -205,7 +206,10 @@ pagesRouter.patch('/:id', requireAuth, (req, res) => {
   if (typeof b.title === 'string') set('title', b.title.slice(0, 500));
   if ('icon' in b) { set('icon', str(b.icon, 2000) ?? null); if (typeof b.icon === 'string' && /^\/files\/[0-9a-f-]{36}$/.test(b.icon)) keepIcon(req.user.id, b.icon, db.prepare('SELECT name FROM files WHERE id=?').get(b.icon.slice(7))?.name || ''); } // toute image devenue icône rejoint la collection
   if ('cover' in b) set('cover', str(b.cover, 2000) ?? null);
-  if (b.props && typeof b.props === 'object') set('props', JSON.stringify(cleanProps(b.props)));
+  if (b.props && typeof b.props === 'object') {
+    const keep = parse(db.prepare('SELECT props FROM pages WHERE id=?').get(id)?.props, {})?.dw_autotitle; // titre généré par DeepWell : conservé même si le client renvoie des propriétés sans lui
+    set('props', JSON.stringify(cleanProps(keep && !('dw_autotitle' in b.props) ? { ...b.props, dw_autotitle: keep } : b.props)));
+  }
   if (b.schema && typeof b.schema === 'object') set('schema', JSON.stringify(b.schema));
   if (Array.isArray(b.views) && b.views.length <= 50 && JSON.stringify(b.views).length < 200000) set('views', JSON.stringify(b.views));
   if (typeof b.position === 'number') set('position', b.position);
@@ -230,9 +234,10 @@ pagesRouter.patch('/:id', requireAuth, (req, res) => {
         UPDATE pages SET owner_id=?2 WHERE id IN (SELECT id FROM d)`).run(id, owner);
     }
   });
+  const autoTitle = b.props ? schoolAutoTitle(id) : null; // mode scolaire : matière choisie sur une fiche sans nom → titre « P.S.A. #n-année-abréviation »
   schoolPageChanged(id); // mode scolaire : titre ou matière changés → dossier Drive à aligner (tâche de fond)
   gcalTouch(id); // base synchronisée avec Google Agenda : mise à jour de l'événement (tâche de fond)
-  res.json({ ok: true });
+  res.json(autoTitle ? { ok: true, title: autoTitle } : { ok: true });
 });
 
 /** Duplique une page avec son contenu et toutes ses sous-pages (la copie n'est liée à aucun import Notion). */

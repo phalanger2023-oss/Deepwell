@@ -21,7 +21,7 @@ export const SCHOOL_OPTIONS = [
 
 const current = (page) => {
   const s = page.props?.dw_school || {};
-  return { enabled: s.enabled === true, options: Object.fromEntries(SCHOOL_OPTIONS.map(([k]) => [k, s.options?.[k] === true])) };
+  return { enabled: s.enabled === true, options: Object.fromEntries(SCHOOL_OPTIONS.map(([k]) => [k, s.options?.[k] === true])), ...(s.abbrevs ? { abbrevs: { ...s.abbrevs } } : {}) };
 };
 
 async function save(page, next) {
@@ -31,6 +31,52 @@ async function save(page, next) {
 }
 
 const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
+
+/** Réorganisation des dossiers Drive (Matière / Support, « Registre des addenda », doublons) : essai à blanc, puis migration. */
+async function reorganizeDialog(page) {
+  let plan;
+  try { plan = await api.post('/api/school/reorganize/preview', { database_id: page.id }); } catch (e) { toast(e.message, 'error'); return; }
+  const t = plan.totals;
+  let timer = null;
+  const status = h('div', { class: 'muted' });
+  const go = h('button', { class: 'btn primary', disabled: !t.supports, onclick: start }, t.supports ? 'Lancer la réorganisation' : 'Rien à réorganiser');
+  const cancel = h('button', { class: 'btn', onclick: () => m.close() }, 'Annuler');
+  const body = h('div', { class: 'imp' },
+    h('p', {}, 'Essai à blanc : rien n’est modifié tant que tu ne lances pas la réorganisation. Organisation visée : DeepWell Cours → Matière → Support → « Document principal » + « Registre des addenda » → un dossier par addendum.'),
+    h('ul', {}, [
+      `${plural(t.moves, 'support sera déplacé', 'supports seront déplacés')} dans le dossier de sa matière (le niveau « année » disparaît).`,
+      `${plural(t.renames, 'dossier « Addenda » sera renommé', 'dossiers « Addenda » seront renommés')} en « Registre des addenda ».`,
+      `${plural(t.duplicates, 'fichier en double sera retiré', 'fichiers en double seront retirés')} (la copie va à la corbeille de Drive, récupérable ; l’original reste).`].map((l) => h('li', {}, l))),
+    t.supports ? h('details', {}, h('summary', {}, 'Voir les supports concernés'), h('ul', { class: 'imp-paths small' }, plan.supports.map((x) => h('li', {}, x.to)))) : null,
+    status, h('div', { class: 'row-end' }, cancel, go));
+  const m = modal('Réorganiser les dossiers Drive', body, { onClose: () => clearInterval(timer) });
+  async function start() {
+    go.disabled = true; cancel.textContent = 'Fermer';
+    try {
+      const r = await api.post('/api/school/reorganize/run', { database_id: page.id });
+      const poll = async () => {
+        const st = await api.get(`/api/school/reorganize/status?batch=${r.batch}`);
+        status.textContent = st.waiting ? `En cours… ${st.done} sur ${st.total} supports terminés.` : st.failed ? `Terminé avec ${plural(st.failed, 'erreur', 'erreurs')} (${st.done} sur ${st.total} réussis). Google réessaie automatiquement ; ${st.errors[0] || ''}` : `Terminé : ${plural(st.done, 'support réorganisé', 'supports réorganisés')}.`;
+        if (!st.waiting) clearInterval(timer);
+      };
+      status.textContent = 'Démarrage…';
+      timer = setInterval(() => poll().catch(() => {}), 3000); poll().catch(() => {});
+    } catch (e) { go.disabled = false; toast(e.message, 'error'); }
+  }
+}
+
+/** Abréviations des matières (titres automatiques « P.S.A. #0007-26-MTH ») : par défaut, les 3 premières consonnes. */
+async function abbrevDialog(page, state, onSaved) {
+  let subjects = [];
+  try { const sch = page.schema || (await api.get(`/api/pages/${page.id}`)).page.schema || {}; const col = Object.values(sch).find((d) => /^mati/i.test(String(d.name).normalize('NFD').replace(/[̀-ͯ]/g, '')) && ['select', 'status'].includes(d.type)); subjects = (col?.[col.type]?.options || []).map((o) => o.name); } catch { /* base illisible */ }
+  const inputs = subjects.map((n) => { const i = h('input', { class: 'input', maxlength: 6, placeholder: 'auto', value: state.abbrevs?.[n] || '', style: 'width:90px;text-transform:uppercase' }); return [n, i]; });
+  const m = modal('Abréviations des matières', h('div', { class: 'imp' },
+    h('p', { class: 'muted' }, 'Utilisées dans « P.S.A. #0007-26-MTH » et « Addendum #0007/02-26-MTH ». Laisse vide : les 3 premières consonnes de la matière sont utilisées.'),
+    subjects.length ? h('div', {}, inputs.map(([n, i]) => h('label', { style: 'display:flex;gap:8px;align-items:center;margin:4px 0' }, h('span', { style: 'flex:1' }, n), i))) : h('p', {}, 'Aucune matière trouvée dans la colonne « Matière ».'),
+    h('div', { class: 'row-end' }, h('button', { class: 'btn', onclick: () => m.close() }, 'Fermer'), h('button', { class: 'btn primary', onclick: async () => {
+      const ab = {}; for (const [n, i] of inputs) if (i.value.trim()) ab[n] = i.value.trim().toUpperCase().slice(0, 6);
+      try { const next = { ...state }; if (Object.keys(ab).length) next.abbrevs = ab; else delete next.abbrevs; await save(page, next); Object.assign(state, next); if (!next.abbrevs) delete state.abbrevs; onSaved?.(); toast('Abréviations enregistrées'); m.close(); } catch (e) { toast(e.message, 'error'); } } }, 'Enregistrer'))));
+}
 
 /** Rattachement des cours existants : aperçu (rien n'est modifié), puis lancement et suivi. */
 async function importDialog(page) {
@@ -124,7 +170,11 @@ export function openDatabaseSettings(page, { onSaved } = {}) {
       h('small', { class: 'muted' }, 'Ajoute le bouton « Nouvel addendum », retire les boutons vides, met la matière « TBD » par défaut et propose de ranger les cours existants dans Drive. Un aperçu s’affiche d’abord.')] : [];
     tools.replaceChildren(...addendaTool, ...(state.enabled && state.options.drive ? [
       h('button', { class: 'btn small', onclick: () => importDialog(page) }, vi('folder', 14), 'Rattacher mes cours existants…'),
-      h('small', { class: 'muted' }, 'Range tes cours déjà présents dans les dossiers Drive. Un aperçu s’affiche d’abord, rien ne bouge sans ta confirmation.')] : []));
+      h('small', { class: 'muted' }, 'Range tes cours déjà présents dans les dossiers Drive. Un aperçu s’affiche d’abord, rien ne bouge sans ta confirmation.'),
+      h('button', { class: 'btn small', onclick: () => reorganizeDialog(page) }, vi('folder', 14), 'Réorganiser les dossiers Drive…'),
+      h('small', { class: 'muted' }, 'DeepWell Cours → Matière → Support → Document principal + Registre des addenda. Essai à blanc d’abord ; retire aussi les fichiers en double.')] : []),
+      ...(state.enabled ? [h('button', { class: 'btn small', onclick: () => abbrevDialog(page, state, onSaved) }, vi('tag', 14), 'Abréviations des matières…'),
+        h('small', { class: 'muted' }, 'Pour les titres automatiques « P.S.A. #0007-26-MTH » (par défaut : 3 premières consonnes).')] : []));
   };
   async function change(apply) {
     const before = JSON.stringify(state);

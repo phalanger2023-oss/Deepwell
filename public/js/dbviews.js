@@ -128,7 +128,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     r.props = { ...(r.props || {}), [col]: np };
     const patch = { props: r.props };
     if (col === tk) { r.title = rtPlain(np.title); patch.title = r.title; }
-    try { await api.patch(`/api/pages/${r.id}`, patch); if (col === tk) onChange?.(); } catch (e) { toast(e.message, 'error'); }
+    try { const res = await api.patch(`/api/pages/${r.id}`, patch); if (res?.title && col !== tk) { r.title = res.title; r.props = { ...r.props, [tk]: { type: 'title', title: plainRt(res.title) } }; draw(); onChange?.(); } else if (col === tk) onChange?.(); } catch (e) { toast(e.message, 'error'); }
   }
   async function createRow(title = '', extra = {}) {
     const created = await api.post('/api/pages', { parent_id: page.id, title });
