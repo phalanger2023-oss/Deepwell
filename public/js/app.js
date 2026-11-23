@@ -245,8 +245,46 @@ function favSection() {
   };
   const where = favBottom();
   return [h('div', { class: 'sb-section sb-section-row' }, h('span', {}, 'Favoris'),
-    h('button', { class: 'icon-btn sb-plus', style: 'opacity:1', title: where ? 'Placer la section Favoris en haut du panneau' : 'Placer la section Favoris en bas du panneau', 'aria-label': 'Déplacer la section Favoris', onclick: () => { store.set('dw_fav_bottom', !where); drawSidebar(); } }, vi(where ? 'arrow-up' : 'arrow-down', 14))),
+    h('button', { class: 'icon-btn sb-plus', style: 'opacity:1', title: where ? 'Placer la section Favoris en haut du panneau' : 'Placer la section Favoris en bas du panneau', 'aria-label': 'Déplacer la section Favoris', onclick: () => { store.set('dw_fav_bottom', !where); const o = sbSections().filter((k) => k !== 'fav'); o.splice(where ? o.indexOf('actions') + 1 : o.length, 0, 'fav'); store.set('dw_sb_order', o); drawSidebar(); } }, vi(where ? 'arrow-up' : 'arrow-down', 14))),
     h('div', { class: 'sb-favs' }, items.map(row))];
+}
+/** Ordre du panneau latéral : sections (Favoris, Pages, Partagé…) et boutons d'action, réordonnables par glisser-déposer (mémorisé sur cet appareil). */
+const SB_KEYS = ['actions', 'fav', 'pages', 'shared'], SB_ACTION_KEYS = ['search', 'page', 'folder', 'db'];
+function sbOrderOf(name, all, fallback) {
+  const saved = store.get(name, null), base = (Array.isArray(saved) ? saved : fallback).filter((k) => all.includes(k));
+  all.forEach((k) => { if (!base.includes(k)) base.push(k); });
+  return base;
+}
+const sbSections = () => sbOrderOf('dw_sb_order', SB_KEYS, favBottom() ? ['actions', 'pages', 'shared', 'fav'] : SB_KEYS);
+function sbMove(name, order, from, to, after) {
+  if (from === to) return;
+  const o = order.filter((k) => k !== from), at = o.indexOf(to);
+  o.splice(at < 0 ? o.length : at + (after ? 1 : 0), 0, from);
+  store.set(name === 'actions' ? 'dw_sb_actions' : 'dw_sb_order', o); drawSidebar();
+}
+/** Rend un élément déplaçable (poignée = l'élément lui-même) et déposable parmi ses frères de même nom d'ordre. */
+function sbDraggable(el, name, key, order, headerOnly = false) {
+  el.draggable = true; el.dataset.sbkey = key;
+  let fromHeader = !headerOnly;
+  if (headerOnly) el.addEventListener('mousedown', (e) => { fromHeader = !!e.target.closest('.sb-section'); });
+  el.addEventListener('dragstart', (e) => {
+    if (e.target !== el || !fromHeader) { if (e.target === el) e.preventDefault(); return; } // glisser une page de l'arbre ne déplace pas la section
+    e.stopPropagation(); e.dataTransfer.setData('text/dw-sb-' + name, key); e.dataTransfer.effectAllowed = 'move'; el.classList.add('sb-dragging');
+  });
+  el.addEventListener('dragend', () => { el.classList.remove('sb-dragging'); document.querySelectorAll('.sb-over-top,.sb-over-bottom').forEach((x) => x.classList.remove('sb-over-top', 'sb-over-bottom')); });
+  el.addEventListener('dragover', (e) => {
+    if (![...e.dataTransfer.types].includes('text/dw-sb-' + name)) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = el.getBoundingClientRect(), after = e.clientY > r.top + r.height / 2;
+    el.classList.toggle('sb-over-top', !after); el.classList.toggle('sb-over-bottom', after);
+  });
+  el.addEventListener('dragleave', () => el.classList.remove('sb-over-top', 'sb-over-bottom'));
+  el.addEventListener('drop', (e) => {
+    const from = e.dataTransfer.getData('text/dw-sb-' + name); if (!from) return;
+    e.preventDefault(); e.stopPropagation();
+    const r = el.getBoundingClientRect(); sbMove(name, order, from, key, e.clientY > r.top + r.height / 2);
+  });
+  return el;
 }
 function drawSidebar() {
   refreshFavicon();
@@ -278,20 +316,28 @@ function drawSidebar() {
     h('div', { class: 'sb-head' }, S.settings.favicon ? h('span', { class: 'sb-avatar sb-logo' }, iconNode(S.settings.favicon, 22)) : h('span', { class: 'sb-avatar' }, (S.settings.site_name || 'D')[0].toUpperCase()),
       h('div', { class: 'who' }, h('a', { href: '#/', class: 'logo' }, S.settings.site_name || 'Deepwell'), h('span', { class: 'muted small' }, S.me.name || S.me.email)),
       h('button', { class: 'icon-btn sb-toggle', onclick: toggleSidebar, title: 'Masquer le panneau latéral (Ctrl+\\)', 'aria-label': 'Masquer le panneau latéral' }, vi('panel-left-close', 18))),
-    h('div', { class: 'sb-actions' },
-      h('button', { class: 'si-btn', onclick: openSearch }, vi('search', 16), h('span', {}, 'Rechercher'), h('kbd', {}, 'Ctrl K')),
-      h('button', { class: 'si-btn', onclick: () => newPage(null) }, vi('square-pen', 16), 'Nouvelle page'),
-      h('button', { class: 'si-btn', onclick: () => newPage(null, 'folder') }, vi('folder-plus', 16), 'Nouveau dossier'),
-      h('button', { class: 'si-btn', onclick: () => newPage(null, 'database') }, vi('database', 16), 'Nouvelle base de données')),
-    favBottom() ? null : favSection(),
-    h('div', { class: 'sb-section sb-section-row' }, h('span', {}, 'Pages'),
-      h('button', { class: 'icon-btn sb-plus', title: 'Ajouter…', 'aria-label': 'Ajouter une page, un dossier ou une base', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); popMenu(r.left, r.bottom + 4, newMenuItems(null)); } }, vi('plus', 15))),
-    S.sel.size ? selBar() : null,
-    h('div', { class: 'sb-tree', oncontextmenu: (e) => { if (e.target.closest('.si')) return; e.preventDefault(); popMenu(e.clientX, e.clientY, newMenuItems(null)); }, ondragover: (e) => { if ([...e.dataTransfer.types].includes('text/dw-page')) e.preventDefault(); },
-      ondrop: async (e) => { const id = e.dataTransfer.getData('text/dw-page'); if (!id) return; try { await api.patch(`/api/pages/${id}`, { parent_id: null }); await refreshTree(); } catch (x) { toast(x.message, 'error'); } } },
-      roots.length ? roots.map((p) => node(p, mine, 0)) : h('div', { class: 'muted pad' }, 'Aucune page')),
-    sharedRoots.length ? [h('div', { class: 'sb-section' }, 'Partagé avec moi'), sharedRoots.map((p) => node(p, shared, 0))] : null,
-    favBottom() ? favSection() : null,
+    ...(() => {
+      const actionBtn = {
+        search: () => h('button', { class: 'si-btn', title: 'Glisser pour réordonner', onclick: openSearch }, vi('search', 16), h('span', {}, 'Rechercher'), h('kbd', {}, 'Ctrl K')),
+        page: () => h('button', { class: 'si-btn', title: 'Glisser pour réordonner', onclick: () => newPage(null) }, vi('square-pen', 16), 'Nouvelle page'),
+        folder: () => h('button', { class: 'si-btn', title: 'Glisser pour réordonner', onclick: () => newPage(null, 'folder') }, vi('folder-plus', 16), 'Nouveau dossier'),
+        db: () => h('button', { class: 'si-btn', title: 'Glisser pour réordonner', onclick: () => newPage(null, 'database') }, vi('database', 16), 'Nouvelle base de données'),
+      };
+      const aOrder = sbOrderOf('dw_sb_actions', SB_ACTION_KEYS, SB_ACTION_KEYS);
+      const groups = {
+        actions: [h('div', { class: 'sb-actions' }, aOrder.map((k) => sbDraggable(actionBtn[k](), 'actions', k, aOrder)))],
+        fav: favSection(),
+        pages: [h('div', { class: 'sb-section sb-section-row' }, h('span', {}, 'Pages'),
+          h('button', { class: 'icon-btn sb-plus', title: 'Ajouter…', 'aria-label': 'Ajouter une page, un dossier ou une base', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); popMenu(r.left, r.bottom + 4, newMenuItems(null)); } }, vi('plus', 15))),
+          S.sel.size ? selBar() : null,
+          h('div', { class: 'sb-tree', oncontextmenu: (e) => { if (e.target.closest('.si')) return; e.preventDefault(); popMenu(e.clientX, e.clientY, newMenuItems(null)); }, ondragover: (e) => { if ([...e.dataTransfer.types].includes('text/dw-page')) e.preventDefault(); },
+            ondrop: async (e) => { const id = e.dataTransfer.getData('text/dw-page'); if (!id) return; try { await api.patch(`/api/pages/${id}`, { parent_id: null }); await refreshTree(); } catch (x) { toast(x.message, 'error'); } } },
+            roots.length ? roots.map((p) => node(p, mine, 0)) : h('div', { class: 'muted pad' }, 'Aucune page'))],
+        shared: sharedRoots.length ? [h('div', { class: 'sb-section' }, 'Partagé avec moi'), sharedRoots.map((p) => node(p, shared, 0))] : null,
+      };
+      const sOrder = sbSections();
+      return sOrder.map((k) => { const nodes = groups[k] && [groups[k]].flat(2).filter(Boolean); if (!nodes?.length) return null; const g = h('div', { class: 'sb-group' }, nodes); return sbDraggable(g, 'sections', k, sOrder, true); });
+    })(),
     h('div', { class: 'sb-foot' },
       h('a', { href: '#/trash', class: 'si-btn ico', title: 'Corbeille', 'aria-label': 'Corbeille' }, vi('trash-2', 15)),
       h('a', { href: '#/settings', class: 'si-btn ico', title: 'Réglages', 'aria-label': 'Réglages' }, vi('settings', 15)),
@@ -641,7 +687,7 @@ async function showPage(id) {
           iconNode(c.icon, 20, kindIcon(c.kind)), h('span', { class: 'lst-title' }, prettify(c.title) || 'Sans titre'), c.kind !== 'database' && n ? h('span', { class: 'muted small' }, `${n} élément${n > 1 ? 's' : ''}`) : null);
       })) : h('div', { class: 'muted pad' }, 'Ce dossier est vide. Ajoutez-y des pages ou d’autres dossiers, ou déplacez-en avec « Déplacer vers… ».')));
   } else if (page.kind === 'database') {
-    renderDatabase(body, { page, rows: children.map((c) => ({ id: c.id, title: c.title, icon: c.icon, cover: c.cover, legacy: c.legacy, locked: c.locked, props: c.props || {} })), role, onChange: refreshTree });
+    renderDatabase(body, { page, rows: children.map((c) => ({ id: c.id, title: c.title, icon: c.icon, cover: c.cover, legacy: c.legacy, locked: c.locked, srank: c.srank, total: c.total, props: c.props || {} })), role, onChange: refreshTree });
   } else {
     const host = h('div', {});
     body.append(host);
@@ -658,7 +704,7 @@ async function showPage(id) {
       mountDatabase: async (host, dbId) => {
         const d = await api.get(`/api/pages/${dbId}${S.token ? `?token=${encodeURIComponent(S.token)}` : ''}`);
         if (d.page.kind !== 'database') return false;
-        renderDatabase(host, { page: d.page, rows: d.children.map((x) => ({ id: x.id, title: x.title, icon: x.icon, cover: x.cover, legacy: x.legacy, locked: x.locked, props: x.props || {} })), role: S.token ? 'view' : d.role, onChange: refreshTree });
+        renderDatabase(host, { page: d.page, rows: d.children.map((x) => ({ id: x.id, title: x.title, icon: x.icon, cover: x.cover, legacy: x.legacy, locked: x.locked, srank: x.srank, total: x.total, props: x.props || {} })), role: S.token ? 'view' : d.role, onChange: refreshTree });
         return true;
       },
       commentBlock: S.token ? null : (blockId, label, quote, anchor) => showComments(page, role, { block_id: blockId, label, quote, anchor }),

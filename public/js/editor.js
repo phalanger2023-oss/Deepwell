@@ -54,12 +54,14 @@ const SLASH_ITEMS = [
   ['Équation', 'equation', 'équation maths'], ['Table des matières', 'table_of_contents', 'sommaire table des matières'], ['Fichiers du chapitre', 'school_files', 'fichiers chapitre drive pièces jointes scolaire'], ['Sous-page', 'child_page', 'page sous-page'], ['Google Drive', 'drive_file', 'google drive fichier'],
   ['Bouton', 'button', 'bouton button action automatisation routine'], ['Graphique', 'chart', 'graphique chart diagramme statistiques'], ['Graphique en courbe', 'chart:line', 'graphique courbe ligne'], ['Graphique en anneau', 'chart:donut', 'graphique anneau camembert pie'],
 ];
-const SLASH_ICONS = { school_files: '📎', paragraph: 'T', heading_1: 'H1', heading_2: 'H2', heading_3: 'H3', bulleted_list_item: '•', numbered_list_item: '1.', to_do: '☑', toggle: '▸', quote: '❝', callout: '💡', code: '</>', divider: '—', image: '🖼', file: '📎', video: '🎬', pdf: '📄', audio: '🎵', bookmark: '🔖', embed: '🌐', table: '▦', column_list2: '▥', column_list3: '▥', equation: '∑', table_of_contents: '☰', child_page: '📄', drive_file: '△', button: '▶', chart: '📊', 'chart:line': '📈', 'chart:donut': '◔' };
+const SLASH_ICONS = { school_files: '📎', paragraph: 'T', heading_1: 'H1', heading_2: 'H2', heading_3: 'H3', bulleted_list_item: '•', numbered_list_item: '1.', to_do: '☑', toggle: '▸', quote: '▌', callout: '💡', code: '</>', divider: '—', image: '🖼', file: '📎', video: '🎬', pdf: '📄', audio: '🎵', bookmark: '🔖', embed: '🌐', table: '▦', column_list2: '▥', column_list3: '▥', equation: '∑', table_of_contents: '☰', child_page: '📄', drive_file: '△', button: '▶', chart: '📊', 'chart:line': '📈', 'chart:donut': '◔' };
 
 const SHORTCUTS = [
   [/^#{1}\s$/, 'heading_1'], [/^#{2}\s$/, 'heading_2'], [/^#{3}\s$/, 'heading_3'], [/^[-*+]\s$/, 'bulleted_list_item'],
   [/^1[.)]\s$/, 'numbered_list_item'], [/^\[\s?\]\s$/, 'to_do'], [/^>\s$/, 'quote'], [/^\|\s$/, 'quote'], [/^"\s$/, 'quote'],
 ];
+// types de blocs où les raccourcis Markdown (# , ---, - , > …) s'appliquent : texte, citation, cadre, listes, toggle
+const SC_TYPES = new Set(['paragraph', 'quote', 'callout', 'toggle', 'bulleted_list_item', 'numbered_list_item', 'to_do']);
 const nbsp = (s) => s.replace(/ /g, ' ');
 
 export function buildTree(flat) {
@@ -428,7 +430,7 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
 
     // 2) transformer, puis mise en forme du bloc
     if (text) {
-      const kinds = [['paragraph', 'T', 'Texte'], ['heading_1', 'H1', 'Titre 1'], ['heading_2', 'H2', 'Titre 2'], ['heading_3', 'H3', 'Titre 3'], ['bulleted_list_item', '•', 'Puces'], ['numbered_list_item', '1.', 'Numérotée'], ['to_do', '☑', 'À faire'], ['toggle', '▸', 'Toggle'], ['quote', '❝', 'Citation'], ['callout', '!', 'Cadre']];
+      const kinds = [['paragraph', 'T', 'Texte'], ['heading_1', 'H1', 'Titre 1'], ['heading_2', 'H2', 'Titre 2'], ['heading_3', 'H3', 'Titre 3'], ['bulleted_list_item', '•', 'Puces'], ['numbered_list_item', '1.', 'Numérotée'], ['to_do', '☑', 'À faire'], ['toggle', '▸', 'Toggle'], ['quote', '▌', 'Citation'], ['callout', '!', 'Cadre']];
       m.append(h('div', { class: 'bm-sep' }), h('div', { class: 'bm-group' }, h('div', { class: 'bm-title' }, 'Transformer en'), h('div', { class: 'bm-kinds' }, kinds.map(([t, g, l]) => h('button', { class: node.type === t ? 'on' : '', title: l, 'aria-label': l, onclick: () => apply(() => convert(node, t)) }, g)))));
     }
     if (node.type === 'divider') {
@@ -764,6 +766,14 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
     if (rg && !rg.collapsed) rootTxts().filter((t) => t !== el && rg.intersectsNode(t)).forEach((t) => { if (readTxt(t)) changed(); });
     el.classList.toggle('is-empty', !el.textContent.replace(/​/g, '') && !el.querySelector('[data-rt]'));
     const field = el.dataset.field;
+    if (field === 'cell' && e.data && /\s$/.test(e.data)) { // raccourcis dans une cellule : pas de bloc possible, on les traduit en mise en forme du texte
+      const tx = nbsp(el.textContent), mm = /^(#{1,3}|[-*+]|\[\s?\]|1[.)])\s/.exec(tx);
+      if (mm && caretOffset(el) === mm[0].length) {
+        const k = mm[1]; el.textContent = tx.slice(mm[0].length);
+        if (k[0] === '#') el.innerHTML = '<strong>' + el.innerHTML + '</strong>'; else el.textContent = (/^[-*+]$/.test(k) ? '• ' : k[0] === '[' ? '☐ ' : '1. ') + el.textContent;
+        setCaret(el, 1e9);
+      }
+    }
     if (field !== 'rich_text') { if (readTxt(el)) changed(); return; }
     const node = nodeOf(el); if (!node) return;
     {
@@ -771,17 +781,17 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
       if (e.data === ':' && field0(el)) stripUnderlineColon(el);
       node.content.rich_text = htmlToRt(el);
       const text = nbsp(el.textContent);
-      if (node.type === 'paragraph' && /^(---|___|\*\*\*)$/.test(text.trim())) {
+      if (SC_TYPES.has(node.type) && /^(---|___|\*\*\*)$/.test(text.trim()) && !(node.children || []).length) {
         const i = info(node.id), nxt = newBlock('paragraph'); i.arr.splice(i.i, 1, newBlock('divider'), nxt); render({ id: nxt.id }); changed(); return;
       }
       if (node.type === 'paragraph' && /^```\s*$/.test(text)) { convert(node, 'code'); node.content.rich_text = []; render({ id: node.id, sel: '.code-txt' }); changed(); return; }
-      if (node.type === 'paragraph') {
+      if (SC_TYPES.has(node.type)) {
         // raccourci Markdown : « # », « ## », « - », « 1. », « [] », « > »… Il agit quand on tape l'espace juste après le préfixe,
         // AU DÉBUT du bloc, même s'il y a déjà du texte derrière (la mise en forme du reste est conservée) ;
         // ou quand « # Titre » est inséré d'un coup dans un bloc vide (dictée, collage, saisie automatisée).
         const n = text.search(/\s/) + 1;
         const typedSpace = !!e.data && /\s$/.test(e.data) && caretOffset(el) === n;
-        const sc = n > 0 && SHORTCUTS.find(([re]) => re.test(text.slice(0, n)) && (!prevText || typedSpace));
+        const sc = n > 0 && SHORTCUTS.find(([re, ty]) => ty !== node.type && re.test(text.slice(0, n)) && (!prevText || typedSpace));
         if (sc) {
           const dropChars = (rt, k) => { const out = []; for (const r of rt) { if (k <= 0 || r.type !== 'text') { out.push(r); continue; } const t = r.text?.content ?? r.plain_text ?? ''; if (t.length <= k) { k -= t.length; continue; } const rest = t.slice(k); k = 0; out.push({ ...r, text: { ...r.text, content: rest }, plain_text: rest }); } return out; };
           const kept = dropChars(node.content.rich_text, n);
@@ -876,7 +886,7 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
       if (e.shiftKey) { e.preventDefault(); document.execCommand('insertLineBreak'); return; }
       e.preventDefault();
       const text = nbsp(el.textContent);
-      if (node.type === 'paragraph' && /^---+$/.test(text) && collapsed) { convert(node, 'divider'); const nb = newBlock('paragraph'); insertAfter(node.id, nb); render({ id: nb.id }); changed(); return; }
+      if (SC_TYPES.has(node.type) && /^---+$/.test(text) && collapsed && !(node.children || []).length) { convert(node, 'divider'); const nb = newBlock('paragraph'); insertAfter(node.id, nb); render({ id: nb.id }); changed(); return; }
       if (node.type === 'paragraph' && /^```\w*$/.test(text) && collapsed) { const lang = text.slice(3); convert(node, 'code'); if (lang) node.content.language = LANGS.includes(lang) ? lang : 'plain text'; render({ id: node.id }); changed(); return; }
       if (!text && ['bulleted_list_item', 'numbered_list_item', 'to_do', 'quote', 'callout', 'toggle'].includes(node.type)) {
         if (info(node.id).parent && outdent(node.id)) render({ id: node.id }); else { convert(node, 'paragraph'); render({ id: node.id }); }

@@ -200,7 +200,14 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     if (r) { e.preventDefault(); open(r); }
   });
   const matches = (r) => !filter || (r.title + ' ' + allProps.map((c) => propText(r.props?.[c])).join(' ')).toLowerCase().includes(filter.toLowerCase());
-  const sorted = (list, v) => (v.sort?.prop && schema[v.sort.prop] ? [...list].sort((a, b) => compareProps(a.props?.[v.sort.prop], b.props?.[v.sort.prop], v.sort.dir)) : list);
+  // Les lignes verrouillées (valeurs masquées) reprennent la place que leur donne le serveur (rang de tri), au lieu de tomber en bas.
+  const sorted = (list, v) => {
+    if (!(v.sort?.prop && schema[v.sort.prop])) return list;
+    const pr = v.sort.prop, desc = v.sort.dir === 'desc', open = list.filter((r) => !r.locked), shut = list.filter((r) => r.locked);
+    open.sort((a, b) => compareProps(a.props?.[pr], b.props?.[pr], v.sort.dir));
+    shut.map((r) => ({ r, i: r.srank?.[pr] == null ? Infinity : desc ? (r.total || list.length) - 1 - r.srank[pr] : r.srank[pr] })).sort((a, b) => a.i - b.i).forEach(({ r, i }) => open.splice(Math.min(i, open.length), 0, r));
+    return open;
+  };
   let exProm = null; const excerpts = () => (exProm ||= api.get(`/api/pages/${page.id}/excerpts`).catch(() => ({})));
   const cal = {}; // état de navigation du calendrier (non enregistré)
   /** Menu clic droit d'une ligne (liste, galerie, tableau) : ouvrir, renommer, verrouiller avec un code, supprimer. */
@@ -324,7 +331,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
 function drawTable(root, v, c) {
   const { schema, tk, editable } = c, cols = c.visibleProps(v);
   const list = c.sorted(c.rows.filter(c.matches), v);
-  let sortBy = null, sortDir = 1;
+  let sortBy = v.sort?.prop || null, sortDir = v.sort?.dir === 'desc' ? -1 : 1;
   const table = h('table', { class: 'db-table' });
   /** Numérote (1, 2, 3…) les lignes qui n'ont pas encore de valeur dans la colonne, à la suite de la plus grande valeur existante. */
   const numberRows = async (col) => {

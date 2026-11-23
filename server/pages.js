@@ -1,3 +1,4 @@
+import { sortRanks } from './sortrank.js';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import express from 'express';
@@ -167,7 +168,8 @@ pagesRouter.get('/:id', (req, res) => {
     .all(p.id).map(({ created_at, ...c }) => ({ ...c, props: p.kind === 'database' ? parse(c.props, {}) : undefined, ...(school && c.kind === 'page' && isLegacyRow(created_at, parse(c.props, {})) ? { legacy: true } : {}) }));
   if (p.kind === 'database') { // ligne verrouillée et non ouverte : ni titre, ni icône, ni propriétés (seul son identifiant sert à ouvrir l'écran du code)
     const closed = closedIds(req, children.map((c) => c.id));
-    children.forEach((c, i) => { if (closed.has(c.id)) children[i] = { id: c.id, kind: c.kind, title: '', icon: null, cover: null, props: {}, position: c.position, locked: true }; });
+    const ranks = closed.size ? sortRanks(children, [...closed], Object.keys(parse(p.schema, {}))) : null; // position de tri seulement (jamais les valeurs)
+    children.forEach((c, i) => { if (closed.has(c.id)) children[i] = { id: c.id, kind: c.kind, title: '', icon: null, cover: null, props: {}, position: c.position, locked: true, srank: ranks.get(c.id), total: children.length }; });
   }
   const crumbs = []; let cur = p.parent_id, g = 0;
   while (cur && g++ < 50) {

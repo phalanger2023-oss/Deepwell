@@ -860,3 +860,11 @@ body.phone .pi-digits { font-size: 1.25em; } body.phone .pi-keypad { max-width: 
 /* Aperçu invité : pas de panneau latéral, une pastille bien visible */
 body.guest-preview .sidebar, body.guest-preview .sb-toggle { display: none !important; }
 .guest-pill { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg); border-radius: 999px; padding: 4px 11px; font-size: .85em; white-space: nowrap; }
+
+/* ---------- Panneau latéral réordonnable (sections et boutons d'action) ---------- */
+.sb-group { position: relative; }
+.sb-group > .sb-section-row, .sb-group > .sb-section { cursor: grab; }
+.sb-dragging { opacity: .45; }
+.sb-over-top { box-shadow: 0 -2px 0 0 var(--accent); }
+.sb-over-bottom { box-shadow: 0 2px 0 0 var(--accent); }
+.sb-actions .si-btn { cursor: grab; }
