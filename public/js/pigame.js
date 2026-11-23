@@ -32,7 +32,7 @@ const store = (local) => local ? {
   del: async () => { try { localStorage.removeItem(LOCAL_KEY); } catch {} },
 } : { get: () => api.get('/api/pi'), post: (r) => api.post('/api/pi', r), del: () => api.del('/api/pi') };
 
-export async function tabPi(p, { section, local = false, dev = false }) {
+export async function tabPi(p, { section, local = false, dev = false, publicToken = '' }) {
   const st = store(local);
   const MAX = 1000;
   const PI = piDigits(MAX);
@@ -134,8 +134,8 @@ export async function tabPi(p, { section, local = false, dev = false }) {
   const board = h('div', {}), devBox = h('div', {});
   const fmtBest = (x) => (x.best ? `${x.best}` : '—');
   const drawBoard = async () => {
-    if (local) return;
-    let d; try { d = await api.get('/api/pi/leaderboard'); } catch (e) { return board.replaceChildren(h('div', { class: 'form-err' }, e.message)); }
+    if (local && !publicToken) return;
+    let d; try { d = await api.get(local ? `/api/pi/public-leaderboard?token=${encodeURIComponent(publicToken)}` : '/api/pi/leaderboard'); } catch (e) { return board.replaceChildren(h('div', { class: 'form-err' }, e.message)); }
     if (!d.players.length) return board.replaceChildren(h('p', { class: 'muted' }, 'Personne n’a encore joué.'));
     const tot = d.players.reduce((a, x) => ({ runs: a.runs + x.recall_runs + x.learn_runs, digits: a.digits + x.total_digits, secs: a.secs + x.total_seconds }), { runs: 0, digits: 0, secs: 0 });
     board.replaceChildren(
@@ -166,6 +166,6 @@ export async function tabPi(p, { section, local = false, dev = false }) {
           h('td', { class: 'muted small' }, r.mode === 'recall' ? (r.errors ? `${r.errors} erreur(s)` : 'sans faute') : ''))))) : h('p', { class: 'muted' }, 'Aucune partie.'))));
   };
 
-  p.append(section('π — apprendre et réciter', 'Entraînez-vous à mémoriser les décimales de π. ' + (local ? 'Sans compte, votre historique reste dans ce navigateur.' : 'Votre historique est gardé sur le serveur, pour votre compte : il est commun à toutes vos pages π.'), tabs, play), section('Historique', null, hist), ...(local ? [] : [section('Classement', 'Les performances de tous les comptes de ce DeepWell.', board)]), ...(dev && !local ? [section('Mode développeur — toutes les performances', 'Visible seulement par les administrateurs, avec le mode développeur activé.', devBox)] : []));
+  p.append(section('π — apprendre et réciter', 'Entraînez-vous à mémoriser les décimales de π. ' + (local ? 'Sans compte, votre historique reste dans ce navigateur.' : 'Votre historique est gardé sur le serveur, pour votre compte : il est commun à toutes vos pages π.'), tabs, play), section('Historique', null, hist), ...(local && !publicToken ? [] : [section('Classement', local ? 'Les performances des comptes de ce DeepWell (votre partie, sans compte, n’y figure pas).' : 'Les performances de tous les comptes de ce DeepWell.', board)]), ...(dev && !local ? [section('Mode développeur — toutes les performances', 'Visible seulement par les administrateurs, avec le mode développeur activé.', devBox)] : []));
   drawTabs(); drawPlay(); drawHist(); drawBoard(); drawDev();
 }

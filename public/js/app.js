@@ -352,7 +352,7 @@ function drawSidebar() {
       h('a', { href: '#/trash', class: 'si-btn ico', title: 'Corbeille', 'aria-label': 'Corbeille' }, vi('trash-2', 15)),
       h('a', { href: '#/settings', class: 'si-btn ico', title: 'Réglages', 'aria-label': 'Réglages' }, vi('settings', 15)),
       h('button', { class: 'si-btn ico', title: 'Se déconnecter', 'aria-label': 'Se déconnecter', onclick: async () => { await api.post('/api/auth/logout'); S.me = null; location.hash = ''; location.reload(); } }, vi('log-out', 15)),
-      S.settings.version ? h('a', { href: '#/releases', class: 'sb-version', title: releasesUnseen() ? 'Nouveautés : voir les notes de version' : 'Notes de version' }, 'alpha ' + S.settings.version, releasesUnseen() ? h('span', { class: 'sb-dot', 'aria-label': 'Nouvelle version' }) : null) : null),
+      S.settings.version ? h('a', { href: '#/releases', class: 'sb-version', title: releasesUnseen() ? 'Nouveautés : voir les notes de version' : 'Notes de version' }, (S.settings.alpha ? 'alpha ' : '') + S.settings.version, releasesUnseen() ? h('span', { class: 'sb-dot', 'aria-label': 'Nouvelle version' }) : null) : null),
   ].flat().filter(Boolean));
 }
 // ---- sélection multiple de pages (Ctrl/⌘ + clic, Maj + clic pour une plage) ----
@@ -699,7 +699,7 @@ async function showPage(id) {
   } else if (page.kind === 'database') {
     renderDatabase(body, { page, rows: children.map((c) => ({ id: c.id, title: c.title, icon: c.icon, cover: c.cover, legacy: c.legacy, locked: c.locked, srank: c.srank, total: c.total, props: c.props || {} })), role, onChange: refreshTree });
   } else if (page.props?.dw_pi) { // page « π » : le jeu à la place de l'éditeur ; scores et historique sont ceux du compte, communs à toutes les pages π
-    await (await import('./pigame.js')).tabPi(body, { section, local: !S.me, dev: S.me?.role === 'admin' && S.settings.dev_mode === '1' });
+    await (await import('./pigame.js')).tabPi(body, { section, local: !S.me, publicToken: (location.hash.match(/^#\/public\/([^/?#]+)/) || [])[1] || '', dev: S.me?.role === 'admin' && S.settings.dev_mode === '1' });
   } else {
     const host = h('div', {});
     body.append(host);

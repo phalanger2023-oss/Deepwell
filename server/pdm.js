@@ -79,9 +79,30 @@ export function pdmSsoToken(cfg, user) {
   return `${body}.${b64u(crypto.createHmac('sha256', cfg.key).update(body).digest())}`;
 }
 
+/** Crédits (Notes de version) : { lines: [{label, value}], quote, quote_author }. Propres, bornés, jamais de HTML (affichés en texte). */
+export function readCredits() {
+  let c = {}; try { c = JSON.parse(getSetting('credits', '') || '{}'); } catch { /* vide */ }
+  const t = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+  return { lines: (Array.isArray(c.lines) ? c.lines : []).slice(0, 20).map((l) => ({ label: t(l?.label, 60), value: t(l?.value, 300) })).filter((l) => l.label || l.value), quote: t(c.quote, 500), quote_author: t(c.quote_author, 100) };
+}
+export const cleanCredits = (c) => { const prev = getSetting('credits', ''); setSetting('credits', JSON.stringify(c || {})); const out = readCredits(); setSetting('credits', JSON.stringify(out)); return { out, prev }; };
+
+/** Envoie les crédits à PDM (même contenu dans ses notes de version). Jamais bloquant. */
+export async function pdmPushCredits(force = true) {
+  const cfg = pdmConfig(); if (!cfg) return false;
+  try {
+    const credits = readCredits();
+    const fp = `${cfg.url}|${crypto.createHash('sha256').update(JSON.stringify(credits)).digest('hex')}`;
+    if (!force && getSetting('pdm_credits_sent', '') === fp) return true;
+    await call(cfg, '/api/integration/credits', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credits }) });
+    setSetting('pdm_credits_sent', fp);
+    return true;
+  } catch (e) { console.warn('[pdm] crédits non envoyés :', e.message); return false; }
+}
+
 export const pdmRouter = express.Router();
 pdmRouter.get('/config', requireAuth, (req, res) => {
-  if (req.user.role === 'admin') pdmLink(req).then(() => pdmPushLogo(false)); // on en profite pour dire à PDM où est DeepWell (une fois, puis à chaque changement d'adresse)
+  if (req.user.role === 'admin') pdmLink(req).then(() => pdmPushLogo(false)).then(() => pdmPushCredits(false)); // on en profite pour dire à PDM où est DeepWell (une fois, puis à chaque changement d'adresse)
   const c = pdmConfig(); res.json({ configured: !!c, url: c?.url || clean(getSetting('pdm_url', '')), admin: req.user.role === 'admin' }); });
 pdmRouter.put('/config', requireAuth, requireAdmin, async (req, res, next) => {
   try {
@@ -113,5 +134,6 @@ export function pdmSyncAtStart() {
     if (!pdmConfig()) return;
     if (process.env.PUBLIC_URL) await pdmLink({ protocol: 'https', get: () => '' }).catch(() => {});
     await pdmPushLogo(false);
+    await pdmPushCredits(false);
   }, 8000).unref();
 }

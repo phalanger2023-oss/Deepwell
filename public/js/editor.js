@@ -1287,7 +1287,8 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
     setComments: (counts) => { commentCounts = counts || {}; rendering = true; decorateComments(); mo.takeRecords(); rendering = false; },
     scrollToBlock: (id) => { const el = blockEl(id); if (!el) return false; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); return true; },
     insertBlockAt: (type, at = 0) => { if (!editable) return; const nb = newBlock(type, BLOCK_DEFAULTS[type]?.() || {}); tree.splice(Math.min(at, tree.length), 0, nb); render(); changed(); },
-    focusFirst: () => { const f = tree[0]; if (f && editable) focusBlock(f.id, 'end'); },
+    // Entrée dans le titre : on se met sur un bloc de texte vide en tête de page (le premier s'il est déjà vide, sinon un nouveau bloc créé au-dessus)
+    focusFirst: () => { if (!editable) return; const f = tree[0]; if (f && f.type === 'paragraph' && !rtPlain(f.content.rich_text)) focusBlock(f.id, 'end'); else { const b = newBlock('paragraph'); tree.unshift(b); render({ id: b.id }); changed(); } },
     destroy: () => { selBar.remove(); document.removeEventListener('mousedown', onBandDown); document.removeEventListener('mousedown', onLeadDown, true); document.removeEventListener('keydown', onSelKey, true); document.querySelectorAll('.rubber,.sel-pop').forEach((x) => x.remove()); pop.remove(); document.removeEventListener('mousedown', onDocDown); mo.disconnect(); clearTimeout(syncTimer); document.removeEventListener('selectionchange', onSel); menu.remove(); bar.remove(); host.replaceChildren(); },
   };
 }

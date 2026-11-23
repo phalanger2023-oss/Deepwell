@@ -6,8 +6,12 @@
  */
 export const RELEASES = [
   {
-    version: '3.5.0', date: '2026-11-23',
+    version: '3.0.0', date: '2026-11-23',
     nouveautes: [
+      'DeepWell sort de l’alpha : c’est la version 3.0, officielle (les versions précédentes restent visibles dans l’historique, marquées « alpha »).',
+      'Notes de version : bouton « Crédits » (réalisé par, en partenariat avec, une citation…), à remplir librement par l’administrateur ; il est aussi affiché dans les notes de version de PDM.',
+      'Jeu de π : le classement de tous les comptes est aussi visible par les invités d’une page π (lien public) ; leur propre partie, sans compte, n’y figure pas.',
+      'Entrer dans le titre d’une page avec la touche Entrée crée un bloc de texte vide tout en haut de la page et s’y place.',
       'Jeu de π : nombre personnalisé pour l’objectif (1 à 1000), pour le droit à l’erreur (jusqu’à 100) et pour les décimales affichées en mode « Apprendre » ; le compteur d’affichage se met maintenant à jour avec les boutons + / −.',
       'Compte unique avec PDM : les comptes DeepWell servent aussi à PDM (chacun y a ses propres documents). Ouvrir PDM sans être connecté renvoie ici pour se connecter, puis ramène à PDM. Le logo du site est aussi renvoyé à PDM au démarrage et à l’ouverture des réglages PDM, y compris quand l’icône choisie est une image SVG ou d’un autre format.',
       'Jeu de π : l’erreur qui met fin à la partie n’est plus comptée dans l’historique ni le classement ; seules les erreurs permises par le « droit à l’erreur » le sont.',
@@ -320,3 +324,7 @@ export const RELEASES = [
   { version: '3.0.3', date: null, nouveautes: [], ameliorations: [], corrections: ['Aperçu latéral d’une ligne de base décalé vers la droite avec une barre de défilement horizontale.'] },
   { version: '3.0.2', date: null, nouveautes: [], ameliorations: [], corrections: ['Supprimer une mention ou tout le contenu d’un bloc avec Retour arrière ne bloque plus la saisie dans le bloc.'] },
 ];
+
+// Version officielle : tout ce qui est plus ancien que la 3.0.0 reste affiché comme « alpha » (la 3.0.0 et les suivantes ne le sont pas)
+const OFFICIAL = RELEASES.findIndex((r) => r.version === '3.0.0');
+RELEASES.forEach((r, i) => { r.alpha = i > OFFICIAL; });

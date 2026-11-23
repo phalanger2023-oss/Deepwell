@@ -15,7 +15,7 @@ import { localizeRemoteIcons } from './icons-local.js';
 import { RELEASES } from './releases.js';
 import { startJobWorker } from './jobs.js';
 import { schoolRouter } from './school-drive.js';
-import { pdmRouter, pdmPushLogo, pdmSyncAtStart } from './pdm.js';
+import { pdmRouter, pdmPushLogo, pdmSyncAtStart, readCredits, cleanCredits, pdmPushCredits } from './pdm.js';
 import { pingRouter, activityRouter } from './activity.js';
 import { gcalRouter, startGcalSweep } from './gcal.js';
 import { pingRouter as latencyRouter, statusRouter, timingMiddleware } from './status.js';
@@ -76,7 +76,7 @@ const PUBLIC_KEYS = ['site_name', 'accent', 'font', 'radius', 'custom_css', 'def
 // version de Deepwell : une seule source, package.json
 const APP_VERSION = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')).version;
 app.get('/api/settings', (_req, res) =>
-  res.json({ ...Object.fromEntries(PUBLIC_KEYS.map((k) => [k, getSetting(k, '')])), version: APP_VERSION }));
+  res.json({ ...Object.fromEntries(PUBLIC_KEYS.map((k) => [k, getSetting(k, '')])), version: APP_VERSION, alpha: !!RELEASES[0]?.alpha }));
 app.put('/api/settings', requireAuth, requireAdmin, (req, res) => {
   for (const [k, v] of Object.entries(req.body || {})) {
     if ([...PUBLIC_KEYS, 'allow_signup', 'backup_enabled', 'backup_to_drive'].includes(k) && typeof v === 'string') setSetting(k, v.slice(0, 100_000));
@@ -86,6 +86,9 @@ app.put('/api/settings', requireAuth, requireAdmin, (req, res) => {
 });
 // Notes de version : chargées à la demande par la page « Notes de version »
 app.get('/api/releases', requireAuth, (_req, res) => res.json(RELEASES));
+// Crédits (bouton de la page Notes de version) : lus par tous, modifiés par l'administrateur ; copiés vers PDM
+app.get('/api/credits', requireAuth, (req, res) => res.json({ ...readCredits(), editable: req.user.role === 'admin' }));
+app.put('/api/credits', requireAuth, requireAdmin, (req, res) => { const { out } = cleanCredits(req.body); pdmPushCredits(true); res.json({ ...out, editable: true }); });
 app.get('/api/admin/settings', requireAuth, requireAdmin, (_req, res) =>
   res.json({ allow_signup: getSetting('allow_signup', '0'), backup_enabled: getSetting('backup_enabled', '1'), backup_to_drive: getSetting('backup_to_drive', '0') }));
 app.use('/api/admin/users', requireAuth, requireAdmin, adminUsersRouter);

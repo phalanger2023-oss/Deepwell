@@ -9,6 +9,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS pi_runs(
 CREATE INDEX IF NOT EXISTS pi_runs_user ON pi_runs(user_id, at DESC);`);
 
 export const piRouter = express.Router();
+// Classement lisible sans compte, uniquement avec le lien public d'une page π (noms et scores, rien d'autre)
+piRouter.get('/public-leaderboard', (req, res) => {
+  const tk = typeof req.query.token === 'string' ? req.query.token : '';
+  const row = tk ? db.prepare('SELECT p.props FROM shares s JOIN pages p ON p.id=s.page_id WHERE s.public_token=?').get(tk) : null;
+  let isPi = false; try { isPi = !!JSON.parse(row?.props || '{}').dw_pi; } catch { /* props illisibles : refus */ }
+  if (!isPi) return res.status(404).json({ error: 'Lien invalide ou page sans jeu de π' });
+  res.json({ players: leaderboard(null) });
+});
 piRouter.use(requireAuth);
 const int = (v, max) => Math.min(Math.max(Math.trunc(Number(v)) || 0, 0), max);
 piRouter.get('/', (req, res) => {
@@ -36,12 +44,10 @@ const statsOf = (userId) => {
     total_digits: recall.digits, total_seconds: Math.round(recall.secs), digits_per_min: recall.secs > 0 ? Math.round((recall.digits / recall.secs) * 600) / 10 : 0,
     error_rate: recall.digits + recall.errs > 0 ? Math.round((recall.errs / (recall.digits + recall.errs)) * 1000) / 10 : 0, last_at: last };
 };
-piRouter.get('/leaderboard', (req, res) => {
-  const rows = db.prepare('SELECT DISTINCT u.id, u.name FROM users u JOIN pi_runs r ON r.user_id=u.id').all()
-    .map((u) => ({ name: u.name || 'Sans nom', me: u.id === req.user.id, ...statsOf(u.id) }))
-    .sort((a, b) => b.best - a.best || (a.best_seconds ?? 1e9) - (b.best_seconds ?? 1e9));
-  res.json({ players: rows });
-});
+const leaderboard = (meId) => db.prepare('SELECT DISTINCT u.id, u.name FROM users u JOIN pi_runs r ON r.user_id=u.id').all()
+  .map((u) => ({ name: u.name || 'Sans nom', me: !!meId && u.id === meId, ...statsOf(u.id) }))
+  .sort((a, b) => b.best - a.best || (a.best_seconds ?? 1e9) - (b.best_seconds ?? 1e9));
+piRouter.get('/leaderboard', (req, res) => res.json({ players: leaderboard(req.user.id) }));
 piRouter.get('/admin', requireAdmin, (req, res) => {
   if (getSetting('dev_mode', '0') !== '1') return res.status(403).json({ error: 'Cette vue nécessite le mode développeur (Réglages → Développeur)' });
   const users = db.prepare('SELECT id, name, email, role FROM users ORDER BY name').all().map((u) => ({
