@@ -78,7 +78,12 @@ export async function tabPi(p, { section, local = false, dev = false }) {
       if (over) return;
       if (!t0) t0 = Date.now();
       if (PI[idx] === d) { idx++; paint(); if (idx >= state.target) finish(true); }
-      else { errs++; msg.textContent = ''; paint(d); play.classList.add('shake'); setTimeout(() => { play.classList.remove('shake'); if (!over) paint(); }, 350); if (errs > state.lives) { paint(d); finish(false); } }
+      else { // l'erreur qui met fin à la partie n'est pas comptée dans l'historique ; seules les erreurs permises (droit à l'erreur) le sont
+        const fatal = errs + 1 > state.lives;
+        if (!fatal) errs++;
+        msg.textContent = ''; paint(d); play.classList.add('shake'); setTimeout(() => { play.classList.remove('shake'); if (!over) paint(); }, 350);
+        if (fatal) finish(false);
+      }
     };
     input.addEventListener('input', () => { for (const c of input.value) if (/\d/.test(c)) press(c); input.value = ''; });
     input.addEventListener('keydown', (e) => { if (e.key === 'Backspace') e.preventDefault(); });
