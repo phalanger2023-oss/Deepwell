@@ -26,7 +26,7 @@ const store = (local) => local ? {
   del: async () => { try { localStorage.removeItem(LOCAL_KEY); } catch {} },
 } : { get: () => api.get('/api/pi'), post: (r) => api.post('/api/pi', r), del: () => api.del('/api/pi') };
 
-export async function tabPi(p, { section, local = false }) {
+export async function tabPi(p, { section, local = false, dev = false }) {
   const st = store(local);
   const MAX = 1000;
   const PI = piDigits(MAX);
@@ -36,7 +36,7 @@ export async function tabPi(p, { section, local = false }) {
   const setMode = (m) => { state.mode = m; drawTabs(); drawPlay(); };
   const drawTabs = () => tabs.replaceChildren(...[['learn', 'Apprendre'], ['recall', 'Réciter de mémoire']].map(([k, l]) => h('button', { class: `btn${state.mode === k ? ' primary' : ''}`, onclick: () => setMode(k) }, l)));
 
-  const save = async (r) => { try { await st.post(r); drawHist(); } catch (e) { toast(e.message, 'error'); } };
+  const save = async (r) => { try { await st.post(r); drawHist(); drawBoard(); drawDev(); } catch (e) { toast(e.message, 'error'); } };
 
   // ---------- Apprendre : les décimales apparaissent par blocs, on en affiche davantage au fur et à mesure ----------
   const drawLearn = () => {
@@ -58,6 +58,8 @@ export async function tabPi(p, { section, local = false }) {
   };
 
   // ---------- Réciter : on tape les décimales ; la première erreur (ou la dernière vie perdue) termine la partie ----------
+  let focusInput = null; // le clavier de saisie (champ caché) de la partie en cours
+  play.addEventListener('click', (e) => { if (state.mode === 'recall' && focusInput && !e.target.closest('select, option, label, button, a')) focusInput(); }); // jamais en cliquant sur un menu : ça le refermait aussitôt
   const drawRecall = () => {
     let idx = 0, errs = 0, t0 = 0, over = false;
     const typed = h('div', { class: 'pi-digits pi-typed' }), msg = h('div', { class: 'pi-msg' }), stat = h('div', { class: 'muted small' });
@@ -88,8 +90,8 @@ export async function tabPi(p, { section, local = false }) {
         h('label', {}, 'Droit à l’erreur ', sel([[0, 'aucune (parfait)'], [1, '1 erreur'], [3, '3 erreurs']], state.lives, (v) => { state.lives = v; drawRecall(); }))),
       h('p', { class: 'muted' }, 'Tapez les décimales de π de mémoire (après « 3, »). Le chronomètre démarre à la première touche.'),
       typed, msg, stat, input, keypad);
-    paint(); setTimeout(() => input.focus({ preventScroll: true }), 50);
-    play.addEventListener('click', () => input.focus({ preventScroll: true }));
+    paint(); setTimeout(() => { if (!document.activeElement?.closest?.('select')) input.focus({ preventScroll: true }); }, 50);
+    focusInput = () => input.focus({ preventScroll: true });
   };
   const drawPlay = () => (state.mode === 'learn' ? drawLearn() : drawRecall());
 
@@ -110,6 +112,43 @@ export async function tabPi(p, { section, local = false }) {
       d.runs.length ? h('button', { class: 'btn danger small', onclick: async () => { if (await confirmBox('Effacer tout l’historique du jeu ?')) { await st.del(); drawHist(); } } }, 'Effacer l’historique') : null);
   };
 
-  p.append(section('π — apprendre et réciter', 'Entraînez-vous à mémoriser les décimales de π. ' + (local ? 'Sans compte, votre historique reste dans ce navigateur.' : 'Votre historique est gardé sur le serveur, pour votre compte : il est commun à toutes vos pages π.'), tabs, play), section('Historique', null, hist));
-  drawTabs(); drawPlay(); drawHist();
+
+  // ---------- Classement : tous les comptes ----------
+  const board = h('div', {}), devBox = h('div', {});
+  const fmtBest = (x) => (x.best ? `${x.best}` : '—');
+  const drawBoard = async () => {
+    if (local) return;
+    let d; try { d = await api.get('/api/pi/leaderboard'); } catch (e) { return board.replaceChildren(h('div', { class: 'form-err' }, e.message)); }
+    if (!d.players.length) return board.replaceChildren(h('p', { class: 'muted' }, 'Personne n’a encore joué.'));
+    const tot = d.players.reduce((a, x) => ({ runs: a.runs + x.recall_runs + x.learn_runs, digits: a.digits + x.total_digits, secs: a.secs + x.total_seconds }), { runs: 0, digits: 0, secs: 0 });
+    board.replaceChildren(
+      h('div', { class: 'st-grid' },
+        h('div', { class: 'st-card' }, h('div', { class: 'st-l' }, 'Joueurs'), h('div', { class: 'st-v' }, String(d.players.length))),
+        h('div', { class: 'st-card' }, h('div', { class: 'st-l' }, 'Parties jouées'), h('div', { class: 'st-v' }, String(tot.runs))),
+        h('div', { class: 'st-card' }, h('div', { class: 'st-l' }, 'Décimales récitées'), h('div', { class: 'st-v' }, String(tot.digits)), h('div', { class: 'st-s muted small' }, `en ${fmtT(tot.secs)} au total`))),
+      h('table', { class: 'plain pi-board' }, h('thead', {}, h('tr', {}, ['#', 'Joueur', 'Record', 'Parties', 'Victoires', 'Vitesse', 'Dernière partie'].map((t) => h('th', { class: 'muted small' }, t)))),
+        h('tbody', {}, d.players.map((x, i) => h('tr', { class: x.me ? 'pi-me' : '' },
+          h('td', {}, i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : String(i + 1)), h('td', {}, x.name + (x.me ? ' (vous)' : '')),
+          h('td', {}, h('b', {}, fmtBest(x)), x.best_seconds != null ? h('span', { class: 'muted small' }, ` en ${fmtT(x.best_seconds)}`) : null),
+          h('td', {}, String(x.recall_runs + x.learn_runs)), h('td', {}, `${x.wins} / ${x.recall_runs}`), h('td', { class: 'muted' }, x.digits_per_min ? `${x.digits_per_min} déc./min` : '—'),
+          h('td', { class: 'muted small' }, x.last_at ? fmtDate(x.last_at) : '—'))))));
+  };
+  // ---------- Mode développeur : le détail de chaque compte ----------
+  const drawDev = async () => {
+    if (!dev || local) return;
+    let d; try { d = await api.get('/api/pi/admin'); } catch (e) { return devBox.replaceChildren(h('div', { class: 'form-err' }, e.message)); }
+    devBox.replaceChildren(h('p', { class: 'muted small' }, `${d.total_runs} parties au total, ${d.users.length} compte(s). Cliquez sur un compte pour voir le détail.`),
+      ...d.users.map((u) => h('details', { class: 'pi-dev' },
+        h('summary', {}, h('b', {}, u.name || u.email), h('span', { class: 'muted small' }, `  ${u.email} · ${u.role} · record ${u.best} · ${u.recall_runs + u.learn_runs} partie(s)${u.last_at ? ' · dernière ' + fmtDate(u.last_at) : ''}`)),
+        h('div', { class: 'st-grid' }, ...[['Victoires', `${u.wins} / ${u.recall_runs}`], ['Vitesse', u.digits_per_min ? `${u.digits_per_min} déc./min` : '—'], ['Taux d’erreur', `${u.error_rate} %`], ['Temps de récitation', fmtT(u.total_seconds)], ['Jours actifs', String(u.days_active)], ['Appris (max)', `${u.learn_best} déc.`]]
+          .map(([l, v]) => h('div', { class: 'st-card' }, h('div', { class: 'st-l' }, l), h('div', { class: 'st-v' }, v)))),
+        u.best_by_target.length ? h('p', { class: 'muted small' }, 'Meilleur par objectif : ' + u.best_by_target.map((t) => `${t.target} → ${t.best} (${t.n}×)`).join(' · ')) : null,
+        u.runs.length ? h('table', { class: 'plain' }, h('tbody', {}, u.runs.map((r) => h('tr', {},
+          h('td', { class: 'muted small' }, fmtDate(r.at)), h('td', {}, r.mode === 'recall' ? 'Récitation' : 'Apprentissage'),
+          h('td', {}, r.mode === 'recall' ? `${r.digits} / ${r.target}` : `${r.digits} vues`), h('td', { class: 'muted small' }, fmtT(r.seconds)),
+          h('td', { class: 'muted small' }, r.mode === 'recall' ? (r.errors ? `${r.errors} erreur(s)` : 'sans faute') : ''))))) : h('p', { class: 'muted' }, 'Aucune partie.'))));
+  };
+
+  p.append(section('π — apprendre et réciter', 'Entraînez-vous à mémoriser les décimales de π. ' + (local ? 'Sans compte, votre historique reste dans ce navigateur.' : 'Votre historique est gardé sur le serveur, pour votre compte : il est commun à toutes vos pages π.'), tabs, play), section('Historique', null, hist), ...(local ? [] : [section('Classement', 'Les performances de tous les comptes de ce DeepWell.', board)]), ...(dev && !local ? [section('Mode développeur — toutes les performances', 'Visible seulement par les administrateurs, avec le mode développeur activé.', devBox)] : []));
+  drawTabs(); drawPlay(); drawHist(); drawBoard(); drawDev();
 }

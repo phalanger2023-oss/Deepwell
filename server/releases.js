@@ -8,6 +8,8 @@ export const RELEASES = [
   {
     version: '3.5.0', date: '2026-11-23',
     nouveautes: [
+      'Jeu de π : classement de tous les comptes (record, parties, victoires, vitesse, dernière partie) et, pour les administrateurs avec le mode développeur, le détail de chaque compte (taux d’erreur, jours actifs, meilleur par objectif, dernières parties).',
+      'Jeu de π : les menus « Objectif » et « Droit à l’erreur » ne se referment plus tout seuls.',
       'Jeu de π en page à part : tape « /pi » dans une page pour créer une page « π — jeu de mémoire ». Scores et historique sont ceux de ton compte, communs à toutes tes pages π. Avec « Partager » → lien public, des personnes sans compte peuvent y jouer (leur historique reste alors dans leur navigateur).',
       'Menu « / » : les blocs dont un mot correspond exactement à ce que tu tapes passent en premier.',
       'Les addenda se rangent tout seuls dans l’ordre de leur numéro (… [0001/1], [0001/2]…) dès qu’on en ajoute un ou qu’on change son numéro ; les autres sous-pages ne bougent pas.',

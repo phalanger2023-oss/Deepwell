@@ -689,7 +689,7 @@ async function showPage(id) {
   } else if (page.kind === 'database') {
     renderDatabase(body, { page, rows: children.map((c) => ({ id: c.id, title: c.title, icon: c.icon, cover: c.cover, legacy: c.legacy, locked: c.locked, srank: c.srank, total: c.total, props: c.props || {} })), role, onChange: refreshTree });
   } else if (page.props?.dw_pi) { // page « π » : le jeu à la place de l'éditeur ; scores et historique sont ceux du compte, communs à toutes les pages π
-    await (await import('./pigame.js')).tabPi(body, { section, local: !S.me });
+    await (await import('./pigame.js')).tabPi(body, { section, local: !S.me, dev: S.me?.role === 'admin' && S.settings.dev_mode === '1' });
   } else {
     const host = h('div', {});
     body.append(host);
@@ -1117,7 +1117,7 @@ async function showSettings(tab) {
     h('h1', { class: 'title static' }, '⚙ Réglages'),
     h('div', { class: 'tabs' }, TABS.filter(([k]) => isAdmin || !ADMIN_TABS.includes(k)).map(([k, l]) => h('a', { href: `#/settings/${k}`, class: k === tab ? 'on' : '' }, l))), panel)));
   const fn = { profile: tabProfile, datetime: tabDatetime, appearance: tabAppearance, drive: tabDrive, import: tabImport, backup: tabBackup, activity: tabActivity, users: tabUsers, dev: tabDev,
-    server: async (p) => (await import('./serverstatus.js')).tabServer(p, { section }), pi: async (p) => (await import('./pigame.js')).tabPi(p, { section }) }[tab] || tabProfile;
+    server: async (p) => (await import('./serverstatus.js')).tabServer(p, { section }), pi: async (p) => (await import('./pigame.js')).tabPi(p, { section, dev: S.me.role === 'admin' && S.settings.dev_mode === '1' }) }[tab] || tabProfile;
   if (ADMIN_TABS.includes(tab) && !isAdmin) return panel.append(h('p', {}, 'Réservé aux administrateurs.'));
   try { await fn(panel); } catch (e) { panel.append(h('div', { class: 'form-err' }, e.message)); }
 }

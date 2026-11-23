@@ -891,3 +891,6 @@ body .prop, body.phone .prop, body.is-peek .prop { grid-template-columns: minmax
 body .prop .prop-label { font-size: .9em; min-height: 32px; }
 body .prop .cell-input, body .prop .opt-trigger, body .prop .date-btn { min-height: 32px; font-size: .95em; }
 body.is-peek .props { gap: 6px; }
+
+.pi-board th, .pi-board td { text-align: left; padding: 6px 10px; } .pi-board tr.pi-me td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.pi-dev { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; } .pi-dev summary { cursor: pointer; }
