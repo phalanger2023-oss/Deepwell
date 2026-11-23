@@ -8,6 +8,7 @@ export const RELEASES = [
   {
     version: '3.5.0', date: '2026-11-23',
     nouveautes: [
+      'Jeu de π : nombre personnalisé pour l’objectif (1 à 1000), pour le droit à l’erreur (jusqu’à 100) et pour les décimales affichées en mode « Apprendre » ; le compteur d’affichage se met maintenant à jour avec les boutons + / −.',
       'Compte unique avec PDM : les comptes DeepWell servent aussi à PDM (chacun y a ses propres documents). Ouvrir PDM sans être connecté renvoie ici pour se connecter, puis ramène à PDM. Le logo du site est aussi renvoyé à PDM au démarrage et à l’ouverture des réglages PDM.',
       'Jeu de π : l’erreur qui met fin à la partie n’est plus comptée dans l’historique ni le classement ; seules les erreurs permises par le « droit à l’erreur » le sont.',
       'Lien avec PDM : l’icône du site que tu choisis dans Réglages → Apparence est envoyée automatiquement à PDM et sert de fond d’écran à son accueil (à chaque changement d’icône ou de couleur d’accent).',

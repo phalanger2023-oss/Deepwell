@@ -894,3 +894,4 @@ body.is-peek .props { gap: 6px; }
 
 .pi-board th, .pi-board td { text-align: left; padding: 6px 10px; } .pi-board tr.pi-me td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .pi-dev { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; } .pi-dev summary { cursor: pointer; }
+.pi-num { width: 84px; }

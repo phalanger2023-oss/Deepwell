@@ -14,6 +14,12 @@ export function piDigits(n) {
   return (pi / 10n ** BigInt(guard)).toString().slice(1, n + 1); // retire le « 3 »
 }
 
+/** Champ numérique libre (validé à la sortie du champ ou avec Entrée) : borné entre min et max. */
+const numBox = (cur, min, max, fn) => {
+  const el = h('input', { class: 'input pi-num', type: 'number', min, max, step: 1, value: cur, inputmode: 'numeric', 'aria-label': 'Nombre personnalisé' });
+  el.addEventListener('change', () => { const v = Math.round(Number(el.value)); if (!Number.isFinite(v) || el.value === '') { el.value = cur; return; } fn(Math.min(max, Math.max(min, v))); });
+  return el;
+};
 const group = (s, size = 5) => s.match(new RegExp(`.{1,${size}}`, 'g')) || [];
 const fmtT = (s) => (s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s * 10) / 10} s`);
 
@@ -42,7 +48,10 @@ export async function tabPi(p, { section, local = false, dev = false }) {
   const drawLearn = () => {
     const t0 = Date.now();
     const lines = h('div', { class: 'pi-digits' });
+    const countEl = h('span', { class: 'muted small' });
+    const countIn = numBox(state.shown, 1, MAX, (v) => { state.shown = v; paint(); });
     const paint = () => {
+      countEl.textContent = `${state.shown} décimales affichées`; countIn.value = state.shown;
       const g = group(PI.slice(0, state.shown), state.chunk);
       lines.replaceChildren(h('span', { class: 'pi-int' }, '3,'), ...g.map((c, i) => h('span', { class: `pi-chunk${i === g.length - 1 ? ' last' : ''}` }, c)));
     };
@@ -52,14 +61,15 @@ export async function tabPi(p, { section, local = false, dev = false }) {
       h('div', { class: 'pi-row' }, h('label', {}, 'Taille des blocs ', h('select', { class: 'input', onchange: (e) => { state.chunk = Number(e.target.value); paint(); } }, [3, 4, 5, 10].map((v) => h('option', { value: v, selected: v === state.chunk }, `${v} chiffres`)))),
         h('button', { class: 'btn', onclick: () => { state.shown = Math.min(MAX, state.shown + state.chunk * 2); paint(); } }, `+ ${state.chunk * 2} décimales`),
         h('button', { class: 'btn', onclick: () => { state.shown = Math.max(state.chunk, state.shown - state.chunk * 2); paint(); } }, '− moins'),
-        h('button', { class: 'btn', onclick: () => { state.shown = Math.min(MAX, 20); paint(); } }, 'Recommencer à 20')),
+        h('button', { class: 'btn', onclick: () => { state.shown = Math.min(MAX, 20); paint(); } }, 'Recommencer à 20'),
+        h('label', {}, 'Nombre précis ', countIn, ` (1 à ${MAX})`)),
       lines,
-      h('div', { class: 'row-end' }, h('span', { class: 'muted small' }, `${state.shown} décimales affichées`), h('button', { class: 'btn primary', onclick: async () => { await save({ mode: 'learn', digits: state.shown, target: state.shown, seconds: (Date.now() - t0) / 1000, errors: 0 }); toast('Séance d’apprentissage enregistrée'); } }, 'Terminer la séance')));
+      h('div', { class: 'row-end' }, countEl, h('button', { class: 'btn primary', onclick: async () => { await save({ mode: 'learn', digits: state.shown, target: state.shown, seconds: (Date.now() - t0) / 1000, errors: 0 }); toast('Séance d’apprentissage enregistrée'); } }, 'Terminer la séance')));
   };
 
   // ---------- Réciter : on tape les décimales ; la première erreur (ou la dernière vie perdue) termine la partie ----------
   let focusInput = null; // le clavier de saisie (champ caché) de la partie en cours
-  play.addEventListener('click', (e) => { if (state.mode === 'recall' && focusInput && !e.target.closest('select, option, label, button, a')) focusInput(); }); // jamais en cliquant sur un menu : ça le refermait aussitôt
+  play.addEventListener('click', (e) => { if (state.mode === 'recall' && focusInput && !e.target.closest('select, option, label, button, a, input')) focusInput(); }); // jamais en cliquant sur un menu : ça le refermait aussitôt
   const drawRecall = () => {
     let idx = 0, errs = 0, t0 = 0, over = false;
     const typed = h('div', { class: 'pi-digits pi-typed' }), msg = h('div', { class: 'pi-msg' }), stat = h('div', { class: 'muted small' });
@@ -91,11 +101,13 @@ export async function tabPi(p, { section, local = false, dev = false }) {
     const sel = (opts, cur, fn) => h('select', { class: 'input', onchange: (e) => fn(Number(e.target.value)) }, opts.map(([v, l]) => h('option', { value: v, selected: v === cur }, l)));
     play.replaceChildren(
       h('div', { class: 'pi-row' },
-        h('label', {}, 'Objectif ', sel([[10, '10'], [20, '20'], [30, '30'], [50, '50'], [100, '100'], [200, '200'], [500, '500'], [1000, '1000']].map(([v]) => [v, `${v} décimales`]), state.target, (v) => { state.target = v; drawRecall(); })),
-        h('label', {}, 'Droit à l’erreur ', sel([[0, 'aucune (parfait)'], [1, '1 erreur'], [3, '3 erreurs']], state.lives, (v) => { state.lives = v; drawRecall(); }))),
+        h('label', {}, 'Objectif ', sel([...new Set([10, 20, 30, 50, 100, 200, 500, 1000, state.target])].sort((a, b) => a - b).map((v) => [v, `${v} décimales`]), state.target, (v) => { state.target = v; drawRecall(); }),
+          ' ou ', numBox(state.target, 1, MAX, (v) => { state.target = v; drawRecall(); }), ` (1 à ${MAX})`),
+        h('label', {}, 'Droit à l’erreur ', sel([...new Set([0, 1, 3, state.lives])].sort((a, b) => a - b).map((v) => [v, v === 0 ? 'aucune (parfait)' : `${v} erreur${v > 1 ? 's' : ''}`]), state.lives, (v) => { state.lives = v; drawRecall(); }),
+          ' ou ', numBox(state.lives, 0, 100, (v) => { state.lives = v; drawRecall(); }))),
       h('p', { class: 'muted' }, 'Tapez les décimales de π de mémoire (après « 3, »). Le chronomètre démarre à la première touche.'),
       typed, msg, stat, input, keypad);
-    paint(); setTimeout(() => { if (!document.activeElement?.closest?.('select')) input.focus({ preventScroll: true }); }, 50);
+    paint(); setTimeout(() => { if (!document.activeElement?.closest?.('select, .pi-num')) input.focus({ preventScroll: true }); }, 50);
     focusInput = () => input.focus({ preventScroll: true });
   };
   const drawPlay = () => (state.mode === 'learn' ? drawLearn() : drawRecall());
