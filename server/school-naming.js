@@ -65,3 +65,17 @@ export function addendumTitle(pageId) {
   for (const id of ids) { const m = /^\s*Addendum\s*(?:#|\[)\s*\d+\s*\/\s*0*(\d+)/i.exec(db.prepare('SELECT title FROM pages WHERE id=?').get(id)?.title || ''); if (m && Number(m[1]) > max) max = Number(m[1]); }
   return `Addendum [${pad(psa)}/${max + 1}]-${schoolYear(ctx.db)}-${abbrevOf(ctx.cfg, subject)} : `; // ex. « Addendum [0001/1]-26-FR : Fiche outils »
 }
+
+const ADD_NUM = /^\s*Addendum\s*(?:#|\[)\s*\d+\s*\/\s*0*(\d+)/i;
+/** Mode scolaire : les addenda d'une page sont rangés dans l'ordre de leur numéro (Addendum [0001/1], [0001/2]…). Les autres sous-pages gardent leur place. Renvoie true si l'ordre a changé. */
+export function sortAddenda(parentId) {
+  if (!parentId || !schoolContext(parentId)) return false;
+  const kids = db.prepare("SELECT id,title,position FROM pages WHERE parent_id=? AND archived=0 AND kind='page' ORDER BY position, created_at").all(parentId);
+  const add = kids.map((k) => ({ ...k, n: Number(ADD_NUM.exec(k.title || '')?.[1]) })).filter((k) => k.n);
+  if (add.length < 2) return false;
+  const slots = add.map((k) => k.position).sort((a, b) => a - b);
+  const sorted = [...add].sort((a, b) => a.n - b.n || a.position - b.position);
+  let changed = false;
+  sorted.forEach((k, i) => { if (k.position !== slots[i]) { db.prepare('UPDATE pages SET position=? WHERE id=?').run(slots[i], k.id); changed = true; } });
+  return changed;
+}

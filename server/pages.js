@@ -14,6 +14,7 @@ import { lockRouter, lockGuard, lockedIds, closedIds, lockFor } from './locks.js
 import { cleanProps } from './school.js';
 import { isLegacyRow } from './templates.js';
 import { schoolAutoTitle } from './school-naming.js';
+import { sortAddenda } from './school-naming.js';
 import { schoolPageChanged, schoolPagesDeleting, schoolPdmBackfill, schoolAddendumChanged, schoolAddendaBackfill } from './school-drive.js';
 import { templatesRoutes } from './templates.js';
 
@@ -152,6 +153,7 @@ pagesRouter.post('/', requireAuth, (req, res) => {
   db.prepare(`INSERT INTO pages(id,parent_id,owner_id,kind,title,icon,props,schema,position,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(id, parent_id, owner, ['database', 'folder'].includes(kind) ? kind : 'page',
     String(title).slice(0, 500), str(icon, 200) ?? null, props, schema, max + 1, t, t);
+  if (parent_id) sortAddenda(parent_id); // mode scolaire : un nouvel addendum se range à son numéro
   res.json(pageRow(db.prepare('SELECT * FROM pages WHERE id=?').get(id)));
 });
 
@@ -237,6 +239,7 @@ pagesRouter.patch('/:id', requireAuth, (req, res) => {
     }
   });
   const autoTitle = b.props ? schoolAutoTitle(id) : null; // mode scolaire : matière choisie sur une fiche sans nom → titre « P.S.A. #n-année-abréviation »
+  if (b.title !== undefined) { const par = db.prepare('SELECT parent_id FROM pages WHERE id=?').get(id)?.parent_id; if (par) sortAddenda(par); } // titre changé : l'addendum reprend sa place selon son numéro
   schoolPageChanged(id); // mode scolaire : titre ou matière changés → dossier Drive à aligner (tâche de fond)
   gcalTouch(id); // base synchronisée avec Google Agenda : mise à jour de l'événement (tâche de fond)
   res.json(autoTitle ? { ok: true, title: autoTitle } : { ok: true });

@@ -307,6 +307,17 @@ test('titre automatique : « P.S.A. #n-année-abréviation » dès que la matiè
   assert.equal((await api('PATCH', `/api/pages/${c.id}`, { props: matiere('Chimie') })).body.title, 'P.S.A. #0001-26-CHM');
 });
 
+test('addenda : rangés dans l’ordre de leur numéro, même créés dans le désordre ou renumérotés', async () => {
+  const sup = (await api('POST', '/api/pages', { title: 'Ordre', parent_id: ctx.db })).body;
+  await api('PATCH', `/api/pages/${sup.id}`, { props: matiere('Latin') });
+  const mk = async (t) => (await api('POST', '/api/pages', { title: t, parent_id: sup.id })).body.id;
+  const autre = await mk('Notes libres'), c = await mk('Addendum [0001/3]-26-LTN : C'), a = await mk('Addendum [0001/1]-26-LTN : A'), b = await mk('Addendum #0001/02-26-LTN B');
+  const order = () => DB.db.prepare("SELECT title FROM pages WHERE parent_id=? ORDER BY position").all(sup.id).map((r) => r.title.replace(/^Addendum .*?: ?/, '').replace(/^Addendum #\S+ /, ''));
+  assert.deepEqual(order().filter((t) => t !== 'Notes libres'), ['A', 'B', 'C']);
+  await api('PATCH', `/api/pages/${a}`, { title: 'Addendum [0001/4]-26-LTN : A' });
+  assert.deepEqual(order().filter((t) => t !== 'Notes libres'), ['B', 'C', 'A'], 'renuméroté : il change de place');
+});
+
 test('addendum : titre « Addendum [<n° P.S.A.>/<n>]-<année>-<abréviation> : », numéro suivant à chaque addendum', async () => {
   assert.equal((await api('GET', `/api/school/titles/addendum?page_id=${ctx.m1}`)).body.title, 'Addendum [0001/1]-26-MTH : ');
   await api('POST', '/api/pages', { title: 'Addendum [0001/1]-26-MTH : Les angles', parent_id: ctx.m1 });
