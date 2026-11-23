@@ -8,6 +8,7 @@ export const RELEASES = [
   {
     version: '3.5.0', date: '2026-11-23',
     nouveautes: [
+      'Lien avec PDM : l’icône du site que tu choisis dans Réglages → Apparence est envoyée automatiquement à PDM et sert de fond d’écran à son accueil (à chaque changement d’icône ou de couleur d’accent).',
       'Jeu de π : classement de tous les comptes (record, parties, victoires, vitesse, dernière partie) et, pour les administrateurs avec le mode développeur, le détail de chaque compte (taux d’erreur, jours actifs, meilleur par objectif, dernières parties).',
       'Jeu de π : les menus « Objectif » et « Droit à l’erreur » ne se referment plus tout seuls.',
       'Jeu de π en page à part : tape « /pi » dans une page pour créer une page « π — jeu de mémoire ». Scores et historique sont ceux de ton compte, communs à toutes tes pages π. Avec « Partager » → lien public, des personnes sans compte peuvent y jouer (leur historique reste alors dans leur navigateur).',

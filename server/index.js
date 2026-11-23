@@ -15,7 +15,7 @@ import { localizeRemoteIcons } from './icons-local.js';
 import { RELEASES } from './releases.js';
 import { startJobWorker } from './jobs.js';
 import { schoolRouter } from './school-drive.js';
-import { pdmRouter } from './pdm.js';
+import { pdmRouter, pdmPushLogo } from './pdm.js';
 import { pingRouter, activityRouter } from './activity.js';
 import { gcalRouter, startGcalSweep } from './gcal.js';
 import { pingRouter as latencyRouter, statusRouter, timingMiddleware } from './status.js';
@@ -80,6 +80,7 @@ app.put('/api/settings', requireAuth, requireAdmin, (req, res) => {
   for (const [k, v] of Object.entries(req.body || {})) {
     if ([...PUBLIC_KEYS, 'allow_signup', 'backup_enabled', 'backup_to_drive'].includes(k) && typeof v === 'string') setSetting(k, v.slice(0, 100_000));
   }
+  if (req.body && ('favicon' in req.body || 'accent' in req.body)) pdmPushLogo(); // le fond de l'accueil de PDM suit l'icône choisie
   res.json({ ok: true });
 });
 // Notes de version : chargées à la demande par la page « Notes de version »

@@ -7,6 +7,7 @@ import express from 'express';
 import { getSetting, setSetting } from './db.js';
 import { requireAuth, requireAdmin } from './auth.js';
 import { enc, dec } from './drive.js';
+import { siteLogoSvg } from './site-logo.js';
 
 const err = (message, status = 400) => Object.assign(new Error(message), { status });
 const clean = (u) => String(u || '').trim().replace(/\/+$/, '');
@@ -40,6 +41,16 @@ export async function pdmUpload(cfg, { buffer, filename, folder, source }) {
   return call(cfg, '/api/integration/docs', { method: 'POST', body: form });
 }
 
+/** Envoie à PDM le logo choisi dans les réglages (fond de son accueil). Sans icône choisie, PDM revient à son logo de base. Jamais bloquant. */
+export async function pdmPushLogo() {
+  const cfg = pdmConfig(); if (!cfg) return false;
+  try {
+    const svg = await siteLogoSvg();
+    await call(cfg, '/api/integration/logo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ svg: svg || '' }) });
+    return true;
+  } catch (e) { console.warn('[pdm] logo non envoyé :', e.message); return false; }
+}
+
 export const pdmRouter = express.Router();
 pdmRouter.get('/config', requireAuth, (req, res) => { const c = pdmConfig(); res.json({ configured: !!c, url: c?.url || clean(getSetting('pdm_url', '')), admin: req.user.role === 'admin' }); });
 pdmRouter.put('/config', requireAuth, requireAdmin, async (req, res, next) => {
@@ -49,8 +60,10 @@ pdmRouter.put('/config', requireAuth, requireAdmin, async (req, res, next) => {
     if (!key) throw err('Colle la clé affichée par PDM (accueil → « Lier à DeepWell »).');
     await pdmPing({ url, key }); // on ne garde rien si PDM ne répond pas ou refuse la clé
     setSetting('pdm_url', url); setSetting('pdm_key', enc(key));
+    pdmPushLogo();
     res.json({ configured: true, url });
   } catch (e) { next(e); }
 });
+pdmRouter.post('/logo', requireAuth, requireAdmin, async (_req, res) => res.json({ sent: await pdmPushLogo() }));
 pdmRouter.delete('/config', requireAuth, requireAdmin, (_req, res) => { setSetting('pdm_url', ''); setSetting('pdm_key', ''); res.json({ configured: false }); });
 pdmRouter.use((e, _req, res, _next) => res.status(e.status || 500).json({ error: e.message || 'Erreur' }));
