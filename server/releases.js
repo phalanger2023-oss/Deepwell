@@ -8,6 +8,7 @@ export const RELEASES = [
   {
     version: '3.0.0', date: '2026-11-23',
     nouveautes: [
+      'Jeu de π, « Réciter de mémoire » : réglage « Décimales données au départ » (liste ou nombre précis) : elles s’affichent en pâle et tu continues à partir de là ; seules les décimales récitées comptent dans l’historique et le classement.',
       'DeepWell sort de l’alpha : c’est la version 3.0, officielle (les versions précédentes restent visibles dans l’historique, marquées « alpha »).',
       'Notes de version : bouton « Crédits » (réalisé par, en partenariat avec, une citation…), à remplir librement par l’administrateur ; il est aussi affiché dans les notes de version de PDM.',
       'Jeu de π : le classement de tous les comptes est aussi visible par les invités d’une page π (lien public) ; leur propre partie, sans compte, n’y figure pas.',
