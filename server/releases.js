@@ -6,6 +6,20 @@
  */
 export const RELEASES = [
   {
+    version: '3.1.0', date: '2026-11-24',
+    nouveautes: [
+      'Nouvelle ligne avec propriétés : dans une base de données, le bouton crayon à côté de « Nouveau » ouvre un écran de création où l’on choisit le titre et les propriétés avant de créer la ligne, avec correcteur orthographique dans le titre.',
+      'Flèche gauche (et droite) dans l’éditeur : au bord d’un bloc, le curseur passe au bloc voisin au lieu de se perdre dans une zone vide.',
+    ],
+    ameliorations: [
+      'Kanban : en quittant l’aperçu latéral d’une carte, la colonne reste à la même position de défilement.',
+    ],
+    corrections: [
+      'Date de création des éléments d’une base de données : elle affiche maintenant la vraie date de création (et de dernière modification) au lieu d’une date erronée.',
+      'Jeu de π : l’écran ne remonte plus tout seul quand on arrive en bas de la page.',
+    ],
+  },
+  {
     version: '3.0.1', date: '2026-11-23',
     nouveautes: [
       'Jeu de π : le classement de tous les comptes est aussi visible par les invités d’une page π (lien public) ; leur propre partie, sans compte, n’y figure pas.',

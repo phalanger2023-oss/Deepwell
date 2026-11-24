@@ -7,7 +7,7 @@ import { formatDate, prettify, pickDate } from './dates.js';
 import { openOptionPicker, optChip } from './optpicker.js';
 import { vi } from './icons.js';
 
-const EDITABLE = ['title', 'rich_text', 'number', 'unique_id', 'select', 'status', 'multi_select', 'checkbox', 'date', 'url', 'email', 'phone_number'];
+export const EDITABLE = ['title', 'rich_text', 'number', 'unique_id', 'select', 'status', 'multi_select', 'checkbox', 'date', 'url', 'email', 'phone_number'];
 const TYPE_LABELS = { title: 'Titre', rich_text: 'Texte', number: 'Nombre', select: 'Sélection', multi_select: 'Multi-sélection', checkbox: 'Case à cocher', date: 'Date', url: 'URL', email: 'E-mail', phone_number: 'Téléphone' };
 /** Icône (Lucide) du type d'une propriété, affichée devant son nom. */
 export const typeIcon = (t) => ({ title: 'type', rich_text: 'align-left', number: 'hash', select: 'chevron-down', status: 'list-checks', multi_select: 'list', date: 'calendar', checkbox: 'square-check', url: 'link-2', email: 'at-sign', phone_number: 'phone', people: 'users', files: 'paperclip', relation: 'arrow-up-right', formula: 'sigma', rollup: 'sigma', created_time: 'clock', last_edited_time: 'clock', created_by: 'user', last_edited_by: 'user' }[t] || 'tag');

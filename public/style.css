@@ -835,7 +835,7 @@ a.atom-page:hover { background: #444 !important; }
 .pi-digits { font: 600 1.5em/1.7 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: .04em; word-break: break-all; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); min-height: 3.4em; }
 .pi-int { color: var(--accent); margin-right: .3em; } .pi-chunk { margin-right: .55em; display: inline-block; } .pi-chunk.last { background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 4px; }
 .pi-chunk.ok { color: #2f9e5b; } .pi-chunk.bad { color: #d9423e; text-decoration: underline wavy; } .pi-cursor { animation: pi-blink 1s steps(2) infinite; color: var(--accent); }
-@keyframes pi-blink { 50% { opacity: 0; } } .pi-hidden { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+@keyframes pi-blink { 50% { opacity: 0; } } .pi-hidden { position: fixed; left: 0; bottom: 0; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
 .pi-msg { min-height: 1.6em; margin: 8px 0; font-weight: 600; } .pi-msg.win { color: #2f9e5b; } .pi-msg.lose { color: #d9423e; }
 .pi-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 280px; margin-top: 10px; } .pi-keypad .btn { font-size: 1.4em; padding: 14px 0; justify-content: center; }
 .pi-play.shake { animation: pi-shake .3s; } @keyframes pi-shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
@@ -896,3 +896,4 @@ body.is-peek .props { gap: 6px; }
 .pi-dev { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; } .pi-dev summary { cursor: pointer; }
 .pi-num { width: 84px; }
 .credit-line { margin: 6px 0; } .credit-quote { margin: 14px 0 4px; padding: 6px 14px; border-left: 3px solid var(--border); font-style: italic; } .credit-quote footer { font-style: normal; margin-top: 4px; } .credit-row input { flex: 1 1 140px; }
+.create-form { display: grid; gap: 10px; max-height: 60vh; overflow: auto; padding: 2px; } .create-field { display: grid; gap: 4px; } .create-title { resize: vertical; }

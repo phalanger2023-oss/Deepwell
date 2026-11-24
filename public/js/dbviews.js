@@ -6,7 +6,7 @@ import { h, ask, modal, toast, confirmBox, safeUrl, uuid } from './util.js';
 import { rtPlain, plainRt, richTitleNodes } from './richtext.js';
 import { api } from './api.js';
 import { redBar } from './clins.js';
-import { propText, userLabel, propEditor, titleKey, sortKey, compareProps } from './database.js';
+import { propText, userLabel, propEditor, titleKey, sortKey, compareProps, EDITABLE } from './database.js';
 import { vi, iconNode, ICON_COLORS } from './icons.js';
 import { autoClose } from './menus.js';
 import { toInputs, fromInputs, userTz, formatDate, todayIso, prettify } from './dates.js';
@@ -52,8 +52,9 @@ function peekRow(r, onChange) {
     // la page de la base est redessinée (données à jour) : on garde la position de défilement, comme si rien n'avait bougé
     const sc = document.querySelector('.scroll') || document.scrollingElement, y = sc?.scrollTop || 0;
     const hs = [...document.querySelectorAll('.db-scroll, .kb-board')].map((e, i) => [i, e.scrollLeft]);
+    const cs = [...document.querySelectorAll('.kb-cards')].map((e) => e.scrollTop); // défilement propre à chaque colonne du Kanban
     window.dispatchEvent(new Event('dw-refresh-page')); onChange?.();
-    if (y || hs.some(([, x]) => x)) { let n = 0; const back = () => { const s2 = document.querySelector('.scroll') || document.scrollingElement; if (s2) s2.scrollTop = y; const e2 = [...document.querySelectorAll('.db-scroll, .kb-board')]; hs.forEach(([i, x]) => { if (e2[i]) e2[i].scrollLeft = x; }); if (++n < 20 && (!s2 || Math.abs(s2.scrollTop - y) > 2)) setTimeout(back, 60); }; setTimeout(back, 60); }
+    if (y || hs.some(([, x]) => x) || cs.some(Boolean)) { let n = 0; const back = () => { const c2 = [...document.querySelectorAll('.kb-cards')]; cs.forEach((t, i) => { if (c2[i] && t) c2[i].scrollTop = t; }); const s2 = document.querySelector('.scroll') || document.scrollingElement; if (s2) s2.scrollTop = y; const e2 = [...document.querySelectorAll('.db-scroll, .kb-board')]; hs.forEach(([i, x]) => { if (e2[i]) e2[i].scrollLeft = x; }); if (++n < 20 && (n < 6 || !s2 || Math.abs(s2.scrollTop - y) > 2)) setTimeout(back, 60); }; setTimeout(back, 60); }
   };
   const wrap = h('div', { class: 'peek-wrap' }, h('div', { class: 'peek-back', onclick: () => close() }),
     h('aside', { class: 'peek', role: 'dialog', 'aria-label': 'Aperçu de l’entrée' }, h('div', { class: 'peek-head' },
@@ -137,6 +138,25 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     await api.patch(`/api/pages/${row.id}`, { props: row.props });
     onChange?.();
     return row;
+  }
+  /** Écran de création : titre + propriétés choisies avant de créer la ligne, avec correcteur orthographique. */
+  function openCreate() {
+    const vals = {}, fields = h('div', { class: 'create-form' });
+    const title = h('textarea', { class: 'input create-title', rows: 2, placeholder: 'Titre', spellcheck: 'true', lang: 'fr', 'aria-label': 'Titre' });
+    fields.append(h('label', { class: 'create-field' }, h('span', { class: 'muted small' }, 'Titre'), title));
+    const skip = new Set([tk]);
+    for (const k of allProps.filter((c) => !skip.has(c) && schema[c] && EDITABLE.includes(schema[c].type) && schema[c].type !== 'unique_id')) {
+      const ed = propEditor(schema[k], null, true, (np) => { vals[k] = np; });
+      fields.append(h('div', { class: 'create-field' }, h('span', { class: 'muted small' }, k), ed));
+    }
+    fields.querySelectorAll('input:not([type=checkbox]):not([type=number]):not([type=date]), textarea, [contenteditable="true"]').forEach((el) => { el.setAttribute('spellcheck', 'true'); el.setAttribute('lang', 'fr'); });
+    const go = h('button', { class: 'btn primary', onclick: async () => {
+      go.disabled = true;
+      try { const r = await createRow(title.value.trim(), { ...vals }); m.close(); if (view().type === 'table') draw(); else open(r); }
+      catch (e) { toast(e.message, 'error'); go.disabled = false; }
+    } }, 'Créer');
+    const m = modal('Nouvelle ligne avec propriétés', h('div', {}, fields, h('div', { class: 'row-end' }, h('button', { class: 'btn', onclick: () => m.close() }, 'Annuler'), go)), { wide: true });
+    setTimeout(() => title.focus(), 30);
   }
   // clic sur une entrée : aperçu latéral (par défaut) ou page complète (option de la base)
   const fullDefault = () => !!page.props?.dw_open_full;
@@ -254,6 +274,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
         h('button', { class: 'btn primary small', onclick: async () => {
           try { const r = await createRow('', {}); if (v.type === 'table') { draw(); host.querySelector('tbody tr:last-child .title-cell .cell-input')?.focus(); } else open(r); } catch (e) { toast(e.message, 'error'); }
         } }, vi('plus', 14), 'Nouvelle ligne'),
+        h('button', { class: 'btn primary small btn-split-arrow', title: 'Nouvelle ligne avec propriétés', 'aria-label': 'Nouvelle ligne avec propriétés', onclick: openCreate }, vi('pencil', 14)),
         h('button', { class: 'btn primary small btn-split-arrow', title: 'Nouvelle ligne depuis un modèle', 'aria-label': 'Choisir un modèle', onclick: (e) => openTemplates(e.currentTarget) }, vi('chevron-down', 14))) : null);
     host.replaceChildren(tabs, tools, body);
     drawBody();

@@ -257,6 +257,17 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
     focusEl(el);
     if (offset === 'end') setCaret(el, 1e9); else if (offset === 'start') setCaret(el, 0); else setCaret(el, offset);
   }
+  function hopCaret(dir) {
+    const s = getSelection(); if (!s.rangeCount || !s.isCollapsed || !s.anchorNode) return false;
+    const cur = (s.anchorNode.nodeType === 3 ? s.anchorNode.parentElement : s.anchorNode)?.closest?.('.txt');
+    if (!cur || !host.contains(cur)) return false;
+    const r = document.createRange(); r.selectNodeContents(cur);
+    if (dir < 0) r.setEnd(s.anchorNode, s.anchorOffset); else r.setStart(s.anchorNode, s.anchorOffset);
+    if (r.toString().replace(/\u200b/g, '').length) return false; // pas au bord : comportement normal
+    const all = [...host.querySelectorAll('.txt')].filter((t) => !t.closest('[contenteditable="false"]')), nx = all[all.indexOf(cur) + dir];
+    if (!nx) return false;
+    focusEl(nx); setCaret(nx, dir < 0 ? 1e9 : 0); return true;
+  }
   function renderList(nodes) {
     let n = 0;
     return nodes.map((node) => { n = node.type === 'numbered_list_item' ? n + 1 : 0; return renderBlock(node, n); });
@@ -855,6 +866,8 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
       else selectAllBlocks();
       return;
     }
+    // Flèche gauche / droite au bord d'un bloc : on saute directement au bloc voisin (sinon le curseur s'arrêtait plusieurs fois dans la marge vide du bloc : puce, poignée…)
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && hopCaret(e.key === 'ArrowLeft' ? -1 : 1)) { e.preventDefault(); return; }
     if (slash && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) closeSlash();
     if (slash) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); slash.sel = (slash.sel + (e.key === 'ArrowDown' ? 1 : slash.items.length - 1)) % slash.items.length; drawPopup(); return; }

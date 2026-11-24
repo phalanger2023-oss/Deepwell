@@ -26,6 +26,14 @@ const pageRow = (p) => ({
   props: parse(p.props, {}), schema: p.schema ? parse(p.schema, {}) : null, views: p.views ? parse(p.views, []) : [], position: p.position,
   archived: !!p.archived, created_at: p.created_at, updated_at: p.updated_at,
 });
+/** Propriétés « Créé le » / « Modifié le » : calculées à partir des vraies dates de la page (elles n'étaient pas stockées pour les lignes créées dans DeepWell). */
+const withTimes = (props, schema, created, updated) => {
+  const keys = Object.entries(schema || {}).filter(([, d]) => d?.type === 'created_time' || d?.type === 'last_edited_time');
+  if (!keys.length) return props;
+  const out = { ...(props || {}) };
+  for (const [k, d] of keys) out[k] = { type: d.type, [d.type]: new Date(d.type === 'created_time' ? created : updated).toISOString() };
+  return out;
+};
 const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : undefined);
 const token = (req) => (typeof req.query.token === 'string' ? req.query.token : null);
 
@@ -166,8 +174,8 @@ pagesRouter.get('/:id', (req, res) => {
   const blocks = db.prepare('SELECT id,parent_id,type,content FROM blocks WHERE page_id=? ORDER BY position').all(p.id)
     .map((b) => ({ ...b, content: parse(b.content, {}) }));
   const school = p.kind === 'database' && !!parse(p.props, {})?.dw_school?.enabled;
-  const children = db.prepare('SELECT id,kind,title,icon,cover,props,position,created_at FROM pages WHERE parent_id=? AND archived=0 AND kind != \'template\' ORDER BY position')
-    .all(p.id).map(({ created_at, ...c }) => ({ ...c, props: p.kind === 'database' ? parse(c.props, {}) : undefined, ...(school && c.kind === 'page' && isLegacyRow(created_at, parse(c.props, {})) ? { legacy: true } : {}) }));
+  const children = db.prepare('SELECT id,kind,title,icon,cover,props,position,created_at,updated_at FROM pages WHERE parent_id=? AND archived=0 AND kind != \'template\' ORDER BY position')
+    .all(p.id).map(({ created_at, updated_at, ...c }) => ({ ...c, props: p.kind === 'database' ? withTimes(parse(c.props, {}), parse(p.schema, {}), created_at, updated_at) : undefined, ...(school && c.kind === 'page' && isLegacyRow(created_at, parse(c.props, {})) ? { legacy: true } : {}) }));
   if (p.kind === 'database') { // ligne verrouillée et non ouverte : ni titre, ni icône, ni propriétés (seul son identifiant sert à ouvrir l'écran du code)
     const closed = closedIds(req, children.map((c) => c.id));
     const ranks = closed.size ? sortRanks(children, [...closed], Object.keys(parse(p.schema, {}))) : null; // position de tri seulement (jamais les valeurs)
@@ -181,7 +189,7 @@ pagesRouter.get('/:id', (req, res) => {
   }
   const parent = p.parent_id && db.prepare('SELECT kind,schema FROM pages WHERE id=?').get(p.parent_id);
   res.json({
-    page: pageRow(p), blocks, children, crumbs, role,
+    page: parent?.kind === 'database' ? { ...pageRow(p), props: withTimes(parse(p.props, {}), parse(parent.schema, {}), p.created_at, p.updated_at) } : pageRow(p), blocks, children, crumbs, role,
     parentSchema: parent?.kind === 'database' && accessFor(req.user, p.parent_id, token(req)) ? parse(parent.schema, {}) : null,
   });
 });
