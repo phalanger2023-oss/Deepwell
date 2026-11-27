@@ -1,10 +1,12 @@
 {
   "name": "deepwell",
-  "version": "3.1.0",
+  "version": "3.0.2",
   "description": "Alternative auto-hébergée à Notion : pages, blocs, partage, backups, Google Drive, import Notion.",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=22.5" },
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
@@ -13,6 +15,7 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "geoip-lite": "^1.4.10"
   }
 }

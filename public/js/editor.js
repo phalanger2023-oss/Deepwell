@@ -983,6 +983,14 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
     const text = e.clipboardData?.getData('text/plain');
     if (text == null) return;
     e.preventDefault();
+    const clip = readClip();
+    if (clip && clip.text === text && node && el.dataset.field === 'rich_text' && !curRange()?.toString()) { // blocs copiés dans l'éditeur : on les recolle tels quels
+      const empty = node.type === 'paragraph' && !rtPlain(node.content.rich_text) && !node.children.length;
+      const made = pasteBlocksAfter(node.id, clip);
+      if (empty) { const i = info(node.id); i.arr.splice(i.i, 1); }
+      reidx(); render({ id: made[made.length - 1]?.id }); changed();
+      return;
+    }
     const field = el.dataset.field;
     if (field !== 'rich_text' || !node || node.type === 'code' || !/\n/.test(text.trim())) { document.execCommand('insertText', false, field === 'rich_text' ? text.replace(/\r?\n/g, ' ') : text); return; }
     const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.trim());
@@ -1004,6 +1012,10 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
 
   // Clic droit sur un bloc : menu du bloc. Maj/Ctrl + clic droit, ou clic droit sur du texte sélectionné, gardent le menu du navigateur
   // (copier/coller, suggestions d'orthographe) ; un réglage personnel permet aussi de le conserver partout.
+  host.addEventListener('contextmenu', (e) => { // clic droit sur un lien : suivi des clics (administrateur)
+    const a = e.target.closest?.('a[href]');
+    if (a && !e.shiftKey && hooks.linkMenu?.(a, e)) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
   host.addEventListener('contextmenu', (e) => {
     if (!editable || e.shiftKey || e.ctrlKey || hooks.rightClickMode?.() === 'native' || isControl(e.target)) return;
     const sel = getSelection();
@@ -1278,12 +1290,62 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up, true);
     if (!host.contains(e.target)) e.preventDefault();
   };
+  // --- Copier / couper / coller des blocs sélectionnés (Ctrl+C, Ctrl+X, Ctrl+V) ---
+  const CLIP_KEY = 'dw.blockclip';
+  const readClip = () => { try { return JSON.parse(sessionStorage.getItem(CLIP_KEY) || 'null'); } catch { return null; } };
+  const nodeText = (n, depth = 0) => ['  '.repeat(depth) + (rtPlain(n.content.rich_text) || n.content.title || n.content.expression || ''), ...n.children.map((c) => nodeText(c, depth + 1))].join('\n');
+  function copySel(cutToo) {
+    const top = topmost().map((i) => i.node); if (!top.length) return null;
+    const text = top.map((n) => nodeText(n)).join('\n');
+    try { sessionStorage.setItem(CLIP_KEY, JSON.stringify({ text, blocks: top.map((n) => ({ type: n.type, content: n.content, children: n.children })) })); } catch { /* quota */ }
+    toast(top.length > 1 ? `${top.length} blocs ${cutToo ? 'coupés' : 'copiés'}` : `Bloc ${cutToo ? 'coupé' : 'copié'}`);
+    if (cutToo) deleteSel();
+    return text;
+  }
+  const fromClip = (c) => c.blocks.map((b) => cloneNode({ type: b.type, content: b.content, children: b.children || [] }));
+  /** Colle les blocs du presse-papiers interne après le bloc `afterId` (ou en fin de page) ; renvoie les blocs créés. */
+  function pasteBlocksAfter(afterId, clip) {
+    const nbs = fromClip(clip); if (!nbs.length) return [];
+    const at = afterId ? info(afterId) : null;
+    if (at) at.arr.splice(at.i + 1, 0, ...nbs); else tree.push(...nbs);
+    return nbs;
+  }
+  const onCopy = (e) => {
+    if (!sel.size || e.target.closest?.('.modal, .palette') || isControl(e.target)) return;
+    if (getSelection() && !getSelection().isCollapsed) return; // du texte est sélectionné : copie normale
+    const text = copySel(false); if (text == null) return; e.preventDefault(); e.clipboardData.setData('text/plain', text);
+  };
+  document.addEventListener('copy', onCopy);
+  const onCut = (e) => {
+    if (!sel.size || !editable || e.target.closest?.('.modal, .palette') || isControl(e.target)) return;
+    if (getSelection() && !getSelection().isCollapsed) return;
+    const text = copySel(true); if (text == null) return; e.preventDefault(); e.clipboardData.setData('text/plain', text);
+  };
+  document.addEventListener('cut', onCut);
+  const onPaste = (e) => {
+    if (!sel.size || !editable || e.target.closest?.('.modal, .palette') || isControl(e.target)) return;
+    const clip = readClip(), text = e.clipboardData?.getData('text/plain') ?? '';
+    e.preventDefault();
+    const last = topmost().map((i) => i.node).pop();
+    let made;
+    if (clip && clip.text === text) made = pasteBlocksAfter(last?.id, clip);
+    else if (text.trim()) { made = text.replace(/\r/g, '').split('\n').filter((l) => l.trim()).map((l) => { const nb = newBlock('paragraph'); nb.content.rich_text = plainRt(l.trim()); return nb; }); const at = last && info(last.id); if (at) at.arr.splice(at.i + 1, 0, ...made); else tree.push(...made); }
+    else return;
+    reidx(); sel.clear(); made.forEach((n) => sel.add(n.id)); afterSel();
+  };
+  document.addEventListener('paste', onPaste);
   const onSelKey = (e) => {
+    // Ctrl+Z / Ctrl+Y quand aucun curseur n'est dans un bloc (page cliquée, blocs désélectionnés après une annulation…)
+    if (editable && !sel.size && (e.ctrlKey || e.metaKey) && !e.altKey && ['z', 'y'].includes(e.key.toLowerCase()) && (e.target === document.body || e.target === document.documentElement) && !document.querySelector('.modal, .palette')) {
+      e.preventDefault(); stepHistory(e.key.toLowerCase() === 'y' || e.shiftKey); return;
+    }
     if (!sel.size || isControl(e.target) || e.target.closest?.('.modal, .palette')) return;
     const mod = e.ctrlKey || e.metaKey;
     if (e.key === 'Escape') { clearSel(); return; }
     if (!editable) return;
-    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); deleteSel(); }
+    if (mod && !e.altKey && !e.shiftKey && ['z', 'y'].includes(e.key.toLowerCase())) { e.preventDefault(); e.stopPropagation(); stepHistory(e.key.toLowerCase() === 'y'); }
+    else if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') { e.preventDefault(); e.stopPropagation(); stepHistory(true); }
+    else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); deleteSel(); }
     else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); e.stopPropagation(); eachTop((i) => { i.arr.splice(i.i + 1, 0, cloneNode(i.node)); }); afterSel(); }
     else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); e.stopPropagation(); moveSel(e.key === 'ArrowUp' ? -1 : 1); }
     else if (!mod && !e.altKey && e.key.length === 1) clearSel(); // on se remet à écrire
@@ -1302,6 +1364,6 @@ export function createEditor(host, { blocks, editable, hooks, openAll = false })
     insertBlockAt: (type, at = 0) => { if (!editable) return; const nb = newBlock(type, BLOCK_DEFAULTS[type]?.() || {}); tree.splice(Math.min(at, tree.length), 0, nb); render(); changed(); },
     // Entrée dans le titre : on se met sur un bloc de texte vide en tête de page (le premier s'il est déjà vide, sinon un nouveau bloc créé au-dessus)
     focusFirst: () => { if (!editable) return; const f = tree[0]; if (f && f.type === 'paragraph' && !rtPlain(f.content.rich_text)) focusBlock(f.id, 'end'); else { const b = newBlock('paragraph'); tree.unshift(b); render({ id: b.id }); changed(); } },
-    destroy: () => { selBar.remove(); document.removeEventListener('mousedown', onBandDown); document.removeEventListener('mousedown', onLeadDown, true); document.removeEventListener('keydown', onSelKey, true); document.querySelectorAll('.rubber,.sel-pop').forEach((x) => x.remove()); pop.remove(); document.removeEventListener('mousedown', onDocDown); mo.disconnect(); clearTimeout(syncTimer); document.removeEventListener('selectionchange', onSel); menu.remove(); bar.remove(); host.replaceChildren(); },
+    destroy: () => { selBar.remove(); document.removeEventListener('mousedown', onBandDown); document.removeEventListener('mousedown', onLeadDown, true); document.removeEventListener('keydown', onSelKey, true); document.removeEventListener('copy', onCopy); document.removeEventListener('cut', onCut); document.removeEventListener('paste', onPaste); document.querySelectorAll('.rubber,.sel-pop').forEach((x) => x.remove()); pop.remove(); document.removeEventListener('mousedown', onDocDown); mo.disconnect(); clearTimeout(syncTimer); document.removeEventListener('selectionchange', onSel); menu.remove(); bar.remove(); host.replaceChildren(); },
   };
 }

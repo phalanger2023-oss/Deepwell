@@ -17,6 +17,24 @@ async function createTemplate(page) {
   location.hash = `#/page/${t.id}`; // on arrive directement dans l'éditeur du modèle
 }
 
+/** Crée un modèle en copiant une ligne existante de la base (propriétés + contenu). `rows` : lignes de la base. */
+export async function templateFromRow(page, row, { open = false } = {}) {
+  const t = await api.post(`/api/pages/${page.id}/templates`, { from_page: row.id });
+  toast(`Modèle « ${t.title || 'Sans titre'} » créé depuis cette page`);
+  if (open) location.hash = `#/page/${t.id}`;
+  return t;
+}
+async function pickRowTemplate(page, rows) {
+  const sorted = [...rows].sort((a, b) => (a.title || '').localeCompare(b.title || '', 'fr', { sensitivity: 'base' }));
+  const filter = h('input', { class: 'input', type: 'search', placeholder: 'Rechercher une page de la base…' }), list = h('div', { class: 'tpl-list tpl-pick' });
+  const m = modal('Modèle à partir d’une page existante', h('div', {}, h('p', { class: 'muted small' }, 'Choisissez la page à copier : ses propriétés et son contenu deviennent un nouveau modèle (la page d’origine ne change pas).'), filter, list));
+  const draw = () => {
+    const q = filter.value.trim().toLowerCase(), shown = sorted.filter((r) => !q || (r.title || '').toLowerCase().includes(q)).slice(0, 60);
+    list.replaceChildren(...(shown.length ? shown.map((r) => h('button', { class: 'tpl-row btn', onclick: async () => { try { await templateFromRow(page, r); m.close(); } catch (e) { toast(e.message, 'error'); } } }, vi('file-text', 15), r.title || 'Sans titre')) : [h('p', { class: 'muted' }, 'Aucune page.')]));
+  };
+  filter.addEventListener('input', draw); draw(); setTimeout(() => filter.focus(), 30);
+}
+
 /** Fenêtre « Gérer les modèles » : modifier, dupliquer, supprimer. */
 async function manage(page) {
   const body = h('div', { class: 'tpl-manage' });
@@ -43,7 +61,7 @@ async function manage(page) {
 }
 
 /** Ouvre le menu sous le bouton `anchor`. `onPick(template)` crée la ligne. */
-export async function openTemplateMenu(anchor, { page, onPick }) {
+export async function openTemplateMenu(anchor, { page, onPick, rows = [] }) {
   let tpls;
   try { tpls = await list(page.id); } catch (e) { toast(e.message, 'error'); return; }
   const r = anchor.getBoundingClientRect();
@@ -52,6 +70,7 @@ export async function openTemplateMenu(anchor, { page, onPick }) {
     ...(tpls.length ? tpls.map((t) => ({ label: t.title || 'Sans titre', icon: 'file-text', fn: () => onPick(t) })) : [{ label: 'Aucun modèle pour l’instant', disabled: true, fn() {} }]),
     'sep',
     { label: 'Nouveau modèle…', icon: 'plus', fn: () => createTemplate(page) },
+    rows.length ? { label: 'Modèle depuis une page existante…', icon: 'copy', fn: () => pickRowTemplate(page, rows) } : null,
     tpls.length ? { label: 'Gérer les modèles…', icon: 'settings', fn: () => manage(page) } : null,
   ]);
 }

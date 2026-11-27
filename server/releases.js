@@ -6,17 +6,27 @@
  */
 export const RELEASES = [
   {
-    version: '3.1.0', date: '2026-11-24',
+    version: '3.0.2', date: '2026-11-27',
     nouveautes: [
-      'Nouvelle ligne avec propriétés : dans une base de données, le bouton crayon à côté de « Nouveau » ouvre un écran de création où l’on choisit le titre et les propriétés avant de créer la ligne, avec correcteur orthographique dans le titre.',
+      'Nouvelle ligne avec propriétés : dans une base de données, le bouton crayon à côté de « Nouveau » ouvre un écran de création où l’on choisit le titre, les propriétés et, si la base en a, un modèle (copie des propriétés et du contenu) avant de créer la ligne, avec correcteur orthographique dans les champs texte.',
+      'Modèles à partir de pages existantes : clic droit sur une ligne → « Enregistrer comme modèle », ou menu des modèles → « Modèle depuis une page existante… » (liste de recherche).',
+      'Blocs sélectionnés (Ctrl+clic sur plusieurs blocs) : Ctrl+C copie, Ctrl+X coupe, Ctrl+V colle (aussi d’une page à l’autre, avec la structure), Ctrl+Z / Ctrl+Y annulent et rétablissent.',
+      'Connexions (administrateur) : localisation estimée de chaque IP (pays, région, ville — base hors-ligne embarquée, rien ne sort du serveur) dans les appareils, les consultations et le journal.',
+      'Connexions : recherche libre (IP, compte, e-mail, page, appareil, ville, pays, type d’événement), filtre par type d’événement, période réglable ; clic sur un compte = ses pages consultées (nombre de visites, temps passé, dernière visite) et ses dernières connexions.',
+      'Suivi de liens : clic droit sur un lien d’une page (administrateur) → « Suivre les clics sur ce lien ». Chaque clic est enregistré avec qui, quand, IP et position estimée — y compris pour les visiteurs d’un lien public.',
+      'Statistiques de la page (administrateur, menu ••• de la page) : consultations, visiteurs distincts, temps total et moyen, courbe par jour, qui consulte (avec IP et position), clics sur les liens suivis, commentaires, versions et auteurs des modifications.',
+      'Import Notion — commentaires : nouveau bouton « Importer les commentaires » (Réglages → Import Notion) qui complète les pages déjà importées avec les commentaires Notion, fils de discussion reconstruits, sans doublon, et en option les commentaires attachés aux blocs.',
       'Flèche gauche (et droite) dans l’éditeur : au bord d’un bloc, le curseur passe au bloc voisin au lieu de se perdre dans une zone vide.',
     ],
     ameliorations: [
+      'Réglages réorganisés : catégories (Mon espace, Données, Administration, Développeur) avec leurs sous-catégories ; les catégories réservées à l’administrateur regroupent tout le pouvoir de gestion (utilisateurs, connexions et suivi, sauvegardes, serveur, options développeur).',
+      'Bases de données : la position dans la vue (par exemple tout à droite d’un Kanban, le défilement d’une colonne, la hauteur de la page) est retenue par base et par vue : on la retrouve en revenant d’une autre page, et même après rechargement.',
       'Kanban : en quittant l’aperçu latéral d’une carte, la colonne reste à la même position de défilement.',
     ],
     corrections: [
       'Date de création des éléments d’une base de données : elle affiche maintenant la vraie date de création (et de dernière modification) au lieu d’une date erronée.',
       'Jeu de π : l’écran ne remonte plus tout seul quand on arrive en bas de la page.',
+      'Ctrl+Z / Ctrl+Y fonctionnent aussi quand aucun curseur n’est dans un bloc (blocs sélectionnés, ou juste après une annulation).',
     ],
   },
   {

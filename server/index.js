@@ -9,7 +9,7 @@ import { pagesRouter } from './pages.js';
 import { filesRouter, serveFile } from './files.js';
 import { createBackup, listBackups, backupPath, startScheduler } from './backup.js';
 import { driveRouter, driveCallback, uploadBackupToDrive, hasDrive } from './drive.js';
-import { startNotionImport, jobs } from './import-notion.js';
+import { startNotionImport, startNotionComments, jobs } from './import-notion.js';
 import { startZipImport } from './import-zip.js';
 import { localizeRemoteIcons } from './icons-local.js';
 import { RELEASES } from './releases.js';
@@ -122,6 +122,11 @@ app.post('/api/import/notion', requireAuth, (req, res) => {
   if (!token) return res.status(400).json({ error: 'Jeton d’intégration Notion requis' });
   const job = startNotionImport(req.user.id, token, { overwrite: req.body?.overwrite === true });
   res.json({ id: job.id });
+});
+app.post('/api/import/notion-comments', requireAuth, (req, res) => {
+  const token = String(req.body?.token || '').trim();
+  if (!token) return res.status(400).json({ error: 'Jeton d’intégration Notion requis' });
+  res.json({ id: startNotionComments(req.user.id, token, { blocks: req.body?.blocks === true }).id });
 });
 app.post('/api/import/zip', requireAuth, express.raw({ type: () => true, limit: `${process.env.MAX_UPLOAD_MB || 500}mb` }), (req, res) => {
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'ZIP manquant' });

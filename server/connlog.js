@@ -16,7 +16,15 @@ CREATE TABLE IF NOT EXISTS visits(
   page_id TEXT NOT NULL, started_at INTEGER NOT NULL, last_seen INTEGER NOT NULL, seconds INTEGER NOT NULL DEFAULT 0, pings INTEGER NOT NULL DEFAULT 1,
   ip TEXT, ua TEXT);
 CREATE INDEX IF NOT EXISTS visits_last ON visits(last_seen);
-CREATE INDEX IF NOT EXISTS visits_page ON visits(page_id);`);
+CREATE INDEX IF NOT EXISTS visits_page ON visits(page_id);
+CREATE INDEX IF NOT EXISTS visits_user ON visits(user_id, last_seen);
+CREATE INDEX IF NOT EXISTS connlog_user ON connection_log(user_id, at);
+CREATE TABLE IF NOT EXISTS tracked_links(
+  id TEXT PRIMARY KEY, page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE, url TEXT NOT NULL, created_by TEXT, created_at INTEGER NOT NULL,
+  UNIQUE(page_id, url));
+CREATE TABLE IF NOT EXISTS link_clicks(
+  id TEXT PRIMARY KEY, link_id TEXT NOT NULL REFERENCES tracked_links(id) ON DELETE CASCADE, at INTEGER NOT NULL, user_id TEXT, actor_key TEXT, ip TEXT, ua TEXT);
+CREATE INDEX IF NOT EXISTS link_clicks_link ON link_clicks(link_id, at);`);
 const cols = new Set(db.prepare('PRAGMA table_info(sessions)').all().map((c) => c.name));
 for (const [c, t] of [['created_at', 'INTEGER'], ['last_seen', 'INTEGER'], ['ip', 'TEXT'], ['ua', 'TEXT'], ['ttl_ms', 'INTEGER']]) if (!cols.has(c)) db.exec(`ALTER TABLE sessions ADD COLUMN ${c} ${t}`);
 
@@ -35,4 +43,5 @@ export function purgeOld() {
   const t = now() - 365 * DAY;
   db.prepare('DELETE FROM connection_log WHERE at<?').run(t); db.prepare('DELETE FROM visits WHERE last_seen<?').run(t); db.prepare('DELETE FROM sessions WHERE expires_at<?').run(now());
 }
-purgeOld(); setInterval(purgeOld, DAY).unref();
+export const purgeClicks = () => db.prepare('DELETE FROM link_clicks WHERE at<?').run(now() - 365 * DAY);
+purgeOld(); purgeClicks(); setInterval(purgeOld, DAY).unref();

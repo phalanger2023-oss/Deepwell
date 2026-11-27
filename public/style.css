@@ -897,3 +897,16 @@ body.is-peek .props { gap: 6px; }
 .pi-num { width: 84px; }
 .credit-line { margin: 6px 0; } .credit-quote { margin: 14px 0 4px; padding: 6px 14px; border-left: 3px solid var(--border); font-style: italic; } .credit-quote footer { font-style: normal; margin-top: 4px; } .credit-row input { flex: 1 1 140px; }
 .create-form { display: grid; gap: 10px; max-height: 60vh; overflow: auto; padding: 2px; } .create-field { display: grid; gap: 4px; } .create-title { resize: vertical; }
+
+/* ---------- Statistiques de page (administrateur) ---------- */
+.stats h4 { margin: 18px 0 6px; }
+.stats-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin: 12px 0; }
+.stats-cards .st-v { font-size: 20px; font-weight: 600; }
+.stats-bars { display: flex; align-items: flex-end; gap: 2px; height: 70px; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius); }
+.stats-bar { flex: 1 1 0; min-width: 2px; background: var(--accent, #2383e2); border-radius: 2px 2px 0 0; opacity: .85; }
+.act-search { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.act-search .input { max-width: 340px; }
+.link-who { cursor: pointer; text-decoration: underline dotted; }
+.settings .tabs.cats a { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.settings .tabs.subs { margin-top: -10px; font-size: .95em; }
+.settings .tabs.subs a { padding: 5px 10px; }

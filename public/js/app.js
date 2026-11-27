@@ -567,6 +567,29 @@ async function modernizeDialog(page, onDone) {
       } }, 'Mettre à jour'))));
 }
 const hasDbAncestor = (p) => { let c = S.pageMap?.get(p.parent_id), n = 0; while (c && n++ < 5) { if (c.kind === 'database') return true; c = S.pageMap.get(c.parent_id); } return false; };
+/** Liens suivis de la page courante (clic droit sur un lien → « Suivre ce lien », administrateur) : chaque clic est signalé au serveur (qui, quand, IP). */
+async function loadTracked(pageId) {
+  S.tracked = new Set();
+  try { const r = await api.get(`/api/activity/links?page_id=${encodeURIComponent(pageId)}${S.token ? `&token=${encodeURIComponent(S.token)}` : ''}`); if (S.current?.id === pageId) S.tracked = new Set(r.urls || []); } catch { /* suivi indisponible : sans importance */ }
+}
+const reportLinkClick = (e) => {
+  const a = e.target.closest?.('a[href]'); if (!a || !S.current || !S.tracked?.size || e.button > 1) return;
+  const href = a.getAttribute('href'); if (!S.tracked.has(href)) return;
+  api.post('/api/activity/link', { page_id: S.current.id, url: href, token: S.token || undefined }, { keepalive: true }).catch(() => {});
+};
+document.addEventListener('click', reportLinkClick, true); document.addEventListener('auxclick', reportLinkClick, true);
+/** Clic droit sur un lien (administrateur) : activer / arrêter le suivi, voir les statistiques. */
+function linkMenu(a, e, page) {
+  if (S.token || S.me?.role !== 'admin') return false;
+  const href = a.getAttribute('href'); if (!href || !/^(https?:|mailto:|tel:|\/|#)/i.test(href)) return false;
+  const on = S.tracked?.has(href);
+  const toggle = async () => { await api.put('/api/admin/activity/links', { page_id: page.id, url: href, on: !on }); await loadTracked(page.id); toast(on ? 'Suivi du lien arrêté' : 'Lien suivi : chaque clic sera enregistré (qui, quand, IP, position)'); };
+  const items = [{ label: on ? 'Arrêter le suivi de ce lien' : 'Suivre les clics sur ce lien', icon: on ? 'eye-off' : 'eye', fn: toggle }, { label: 'Statistiques de la page…', icon: 'chart-bar', fn: () => pageStatsDialog(page) }];
+  const menu = h('div', { class: 'ctx-menu' }, items.map((it) => h('button', { onclick: () => { menu.remove(); Promise.resolve().then(it.fn).catch((err) => toast(err.message, 'error')); } }, vi(it.icon, 16), it.label)));
+  menu.style.left = `${Math.min(e.clientX, innerWidth - 280)}px`; menu.style.top = `${Math.min(e.clientY, innerHeight - 120)}px`;
+  document.body.append(menu); autoClose(menu);
+  return true;
+}
 /** Battement de présence : alimente « Réglages → Connexions » (temps passé par page, comptes et liens publics). */
 function startPing(pageId) {
   clearInterval(S.pingTimer); S.pingVisit = null; S.lastAct = S.lastAct || Date.now();
@@ -596,7 +619,7 @@ async function showPage(id) {
   const guest = S.guest === page.id && !S.token;                  // « Aperçu invité » : on voit la page comme quelqu'un qui n'a que la lecture
   const role = guest ? 'view' : data.role;
   S.current = page; drawSidebar();
-  armIdleLock(page.id); startPing(page.id);
+  armIdleLock(page.id); startPing(page.id); loadTracked(page.id);
   if (!S.token) recordVisit(page.id);
   const editable = (role === 'edit' || role === 'owner') && !S.token && !page.archived;
   document.title = `${prettify(page.title) || 'Sans titre'} — ${S.settings.site_name || 'Deepwell'}`;
@@ -722,6 +745,7 @@ async function showPage(id) {
       commentBlock: S.token ? null : (blockId, label, quote, anchor) => showComments(page, role, { block_id: blockId, label, quote, anchor }),
       openComments: () => showComments(page, role, null),
       rightClickMode: () => store.get('dw_ctx_mode', 'deepwell'),
+      linkMenu: (a, e) => linkMenu(a, e, page),
       userName: () => S.me?.name || S.me?.email || '',
       setPageIcons: async (ids, icon) => { for (const pid of ids) { try { await api.patch(`/api/pages/${pid}`, { icon: icon || null }); } catch (e) { toast(e.message, 'error'); } } await refreshTree(); },
       pageTitle: () => prettify(page.title) || '',
@@ -1041,6 +1065,7 @@ function pageMenu(anchor, page, role, editable) {
   if (!S.token && S.lockInfo?.pageId === page.id && (S.lockInfo.own || S.lockInfo.inherited)) items.push({ label: 'Verrouiller maintenant', icon: 'lock', fn: async () => { await api.post(`/api/pages/${page.id}/lock/now`); showPage(page.id); } });
   if (editable && page.kind === 'page' && S.settings.dev_mode === '1') items.push({ label: 'Remplacer des liens par les sous-pages…', icon: 'link-2', fn: () => inlineDialog(page) });
   if (!S.token) items.push({ label: isFav(page.id) ? 'Retirer des favoris' : 'Ajouter aux favoris', icon: 'star', fn: () => toggleFav(page) });
+  if (!S.token && S.me?.role === 'admin') items.push({ label: 'Statistiques de la page', icon: 'chart-bar', fn: () => pageStatsDialog(page) });
   if (editable && page.kind === 'page') items.push({ label: 'Historique des versions', icon: 'history', fn: () => historyDialog(page) });
   items.push({ label: store.get('dw_wide', false) ? 'Largeur normale' : 'Pleine largeur', icon: 'arrow-up-down', fn: () => { store.set('dw_wide', !store.get('dw_wide', false)); return showPage(page.id); } });
   if (role === 'owner' || editable) items.push({ label: 'Mettre à la corbeille', icon: 'trash-2', danger: true, fn: async () => { await api.del(`/api/pages/${page.id}`); await refreshTree(); location.hash = page.parent_id ? `#/page/${page.parent_id}` : '#/'; } });
@@ -1051,6 +1076,36 @@ function pageMenu(anchor, page, role, editable) {
   menu.style.top = `${r.bottom + 4}px`; menu.style.right = `${innerWidth - r.right}px`;
   document.body.append(menu);
   autoClose(menu);
+}
+
+// ================= statistiques de page (administrateur) =================
+async function pageStatsDialog(page) {
+  let days = 30;
+  const body = h('div', { class: 'stats' });
+  const m = modal(`Statistiques — « ${prettify(page.title) || 'Sans titre'} »`, body, { wide: true });
+  const draw = async () => {
+    const st = await api.get(`/api/admin/activity/page/${page.id}?days=${days}`);
+    const card = (v, l) => h('div', { class: 'st-card' }, h('div', { class: 'st-v' }, v), h('div', { class: 'st-l muted small' }, l));
+    const max = Math.max(1, ...st.per_day.map((d) => d.visits));
+    const bars = h('div', { class: 'stats-bars', title: 'Consultations par jour' }, st.per_day.map((d) => h('span', { class: 'stats-bar', title: `${new Date(d.day).toLocaleDateString('fr-FR')} : ${d.visits}`, style: `height:${Math.max(2, Math.round((d.visits / max) * 100))}%` })));
+    const place = (r) => [r.ip, r.geo].filter(Boolean).join(' · ');
+    body.replaceChildren(
+      h('div', { class: 'row-end', style: 'justify-content:flex-start;gap:8px' }, h('select', { class: 'input', onchange: (e) => { days = Number(e.target.value); draw(); } }, [[7, '7 jours'], [30, '30 jours'], [90, '90 jours'], [365, '1 an']].map(([v, l]) => h('option', { value: v, selected: v === days }, l)))),
+      h('div', { class: 'stats-cards' }, card(st.visits, 'consultations'), card(st.visitors, 'visiteurs distincts'), card(fmtDur(st.seconds), 'temps total'), card(fmtDur(st.avg_seconds), 'temps moyen / visite'), card(st.link_visits, 'via lien public'), card(st.last_visit ? fmtDT(st.last_visit) : '—', 'dernière consultation')),
+      bars,
+      h('h4', {}, 'Qui consulte'),
+      st.people.length ? h('table', { class: 'plain' }, h('tbody', {}, st.people.map((p) => h('tr', {}, h('td', {}, p.who), h('td', { class: 'muted small' }, place(p)), h('td', {}, `${p.visits} visite(s)`), h('td', {}, fmtDur(p.seconds)), h('td', { class: 'muted small' }, fmtDT(p.last_seen)))))) : h('p', { class: 'muted' }, 'Aucune consultation sur la période.'),
+      h('h4', {}, 'Liens suivis'),
+      st.links.length ? st.links.map((l) => h('details', { class: 'limits' }, h('summary', {}, h('b', {}, `${l.clicks_total} clic(s)`), ' — ', h('span', { class: 'muted' }, l.url)),
+        l.clicks.length ? h('table', { class: 'plain' }, h('tbody', {}, l.clicks.map((c) => h('tr', {}, h('td', { class: 'muted small' }, fmtDT(c.at)), h('td', {}, c.who), h('td', { class: 'muted small' }, place(c)), h('td', { class: 'muted small' }, c.device))))) : h('p', { class: 'muted' }, 'Aucun clic sur la période.'),
+        h('button', { class: 'btn small', onclick: async () => { await api.put('/api/admin/activity/links', { page_id: page.id, url: l.url, on: false }); loadTracked(page.id); draw(); } }, 'Arrêter le suivi')))
+        : h('p', { class: 'muted' }, 'Aucun lien suivi. Clic droit sur un lien de la page → « Suivre les clics sur ce lien ».'),
+      h('h4', {}, 'Interactions'),
+      h('p', {}, `${st.interactions.comments} commentaire(s) dont ${st.interactions.open_threads} fil(s) ouvert(s) · ${st.interactions.versions} version(s) enregistrée(s)${st.interactions.last_edit ? `, dernière le ${fmtDT(st.interactions.last_edit)}` : ''}`),
+      st.interactions.editors.length ? h('p', { class: 'muted small' }, 'Modifications par : ', st.interactions.editors.map((e) => `${e.name} (${e.n})`).join(', ')) : null,
+      h('p', { class: 'muted small' }, 'La localisation est une estimation à partir de l’adresse IP (base hors-ligne) : pays, région, parfois ville — celle de l’opérateur, pas de la personne.'));
+  };
+  try { await draw(); } catch (e) { m.close?.(); throw e; }
 }
 
 // ================= partage =================
@@ -1117,15 +1172,25 @@ async function showReleases() {
 }
 
 // ================= réglages =================
-const TABS = [['dev', 'Développeur'], ['profile', 'Profil'], ['datetime', 'Date et heure'], ['appearance', 'Apparence'], ['drive', 'Google Drive'], ['import', 'Import Notion'], ['backup', 'Sauvegardes'], ['server', 'Serveur'], ['pi', 'π'], ['activity', 'Connexions'], ['users', 'Utilisateurs']];
-const ADMIN_TABS = ['backup', 'users', 'dev', 'activity', 'server'];
+/** Réglages : catégories → sous-catégories. Les catégories « réservées » (administrateur) regroupent tout le pouvoir de gestion de l'instance. */
+const SETTINGS = [
+  { key: 'perso', label: 'Mon espace', icon: 'user', tabs: [['profile', 'Profil'], ['datetime', 'Date et heure'], ['appearance', 'Apparence'], ['pi', 'π']] },
+  { key: 'data', label: 'Données', icon: 'database', tabs: [['drive', 'Google Drive'], ['import', 'Import Notion']] },
+  { key: 'admin', label: 'Administration', icon: 'shield', admin: true, tabs: [['users', 'Utilisateurs'], ['activity', 'Connexions et suivi'], ['backup', 'Sauvegardes'], ['server', 'Serveur']] },
+  { key: 'developer', label: 'Développeur', icon: 'code', admin: true, tabs: [['dev', 'Options développeur']] },
+];
+const TABS = SETTINGS.flatMap((c) => c.tabs);
+const ADMIN_TABS = SETTINGS.filter((c) => c.admin).flatMap((c) => c.tabs.map(([k]) => k));
 async function showSettings(tab) {
   S.current = null; drawSidebar();
   const isAdmin = S.me.role === 'admin';
+  tab = TABS.some(([k]) => k === tab) ? tab : 'profile';
+  const cats = SETTINGS.filter((c) => isAdmin || !c.admin), cat = cats.find((c) => c.tabs.some(([k]) => k === tab)) || cats[0];
   const panel = h('div', { class: 'settings-panel' });
   mainEl.replaceChildren(topbar([{ title: 'Réglages' }]), h('div', { class: 'scroll' }, h('div', { class: 'page settings' },
     h('h1', { class: 'title static' }, '⚙ Réglages'),
-    h('div', { class: 'tabs' }, TABS.filter(([k]) => isAdmin || !ADMIN_TABS.includes(k)).map(([k, l]) => h('a', { href: `#/settings/${k}`, class: k === tab ? 'on' : '' }, l))), panel)));
+    h('div', { class: 'tabs cats' }, cats.map((c) => h('a', { href: `#/settings/${c.tabs[0][0]}`, class: c.key === cat.key ? 'on' : '' }, vi(c.icon, 15), c.label, c.admin ? h('span', { class: 'rel-tag' }, 'réservé') : null))),
+    cat.tabs.length > 1 ? h('div', { class: 'tabs subs' }, cat.tabs.map(([k, l]) => h('a', { href: `#/settings/${k}`, class: k === tab ? 'on' : '' }, l))) : null, panel)));
   const fn = { profile: tabProfile, datetime: tabDatetime, appearance: tabAppearance, drive: tabDrive, import: tabImport, backup: tabBackup, activity: tabActivity, users: tabUsers, dev: tabDev,
     server: async (p) => (await import('./serverstatus.js')).tabServer(p, { section }), pi: async (p) => (await import('./pigame.js')).tabPi(p, { section, dev: S.me.role === 'admin' && S.settings.dev_mode === '1' }) }[tab] || tabProfile;
   if (ADMIN_TABS.includes(tab) && !isAdmin) return panel.append(h('p', {}, 'Réservé aux administrateurs.'));
@@ -1270,7 +1335,7 @@ async function tabImport(p) {
       const j = await api.get(`/api/import/${id}`);
       log.textContent = j.log.join('\n'); log.scrollTop = log.scrollHeight;
       const c = j.counts;
-      stat.textContent = `${j.status === 'running' ? '⏳ En cours' : j.status === 'done' ? '✅ Terminé' : '❌ Erreur'} — ${c.pages} pages, ${c.databases} bases, ${c.blocks} blocs, ${c.files} fichiers, ${c.warnings} avertissement(s)${j.progress ? ` (${j.progress.done}/${j.progress.total})` : ''}`;
+      stat.textContent = `${j.status === 'running' ? '⏳ En cours' : j.status === 'done' ? '✅ Terminé' : '❌ Erreur'} — ${c.pages} pages, ${c.databases} bases, ${c.blocks} blocs, ${c.files} fichiers, ${c.comments ? `, ${c.comments} commentaire(s)${c.replies ? ` + ${c.replies} réponse(s)` : ''}` : ''}, ${c.warnings} avertissement(s)${j.progress ? ` (${j.progress.done}/${j.progress.total})` : ''}`;
       if (j.status !== 'running') {
         if (j.error) toast(j.error, 'error');
         if (j.missing?.length) stat.append(h('div', { class: 'banner' }, h('b', {}, `${c.missing} page(s) référencée(s) mais inaccessible(s) à l’intégration :`), h('ul', {}, j.missing.slice(0, 40).map((t) => h('li', {}, prettify(t)))),
@@ -1292,6 +1357,12 @@ async function tabImport(p) {
     try { const { id } = await api.post('/api/import/notion', { token: token.value.trim(), overwrite: overwrite.checked }); token.value = ''; await follow(id); }
     catch (e) { toast(e.message, 'error'); }
   };
+  const cToken = h('input', { class: 'input', type: 'password', placeholder: 'secret_… ou ntn_…', autocomplete: 'off' }), cBlocks = h('input', { type: 'checkbox' });
+  const startComments = async () => {
+    if (!cToken.value.trim()) return;
+    try { const { id } = await api.post('/api/import/notion-comments', { token: cToken.value.trim(), blocks: cBlocks.checked }); cToken.value = ''; await follow(id); }
+    catch (e) { toast(e.message, 'error'); }
+  };
   const zip = h('input', { type: 'file', accept: '.zip' });
   p.append(
     h('h3', {}, '1. Import via l’API Notion — recommandé (fidélité maximale)'),
@@ -1310,6 +1381,10 @@ async function tabImport(p) {
       h('li', {}, 'Les blocs que Notion déclare « unsupported » sont conservés en brut mais non affichables.'),
       h('li', {}, 'Les formules/rollups sont importés avec leur dernière valeur calculée (non recalculés).'))),
     h('hr'),
+    h('h3', {}, 'Commentaires Notion — importer ou compléter'),
+    h('p', { class: 'muted' }, 'Récupère les commentaires Notion des pages déjà importées (sans rien réimporter d’autre), avec les fils de discussion. Aucun doublon si vous le relancez. L’API Notion ne donne que les commentaires non résolus ; la capacité « Lire les commentaires » doit être cochée sur l’intégration.'),
+    h('div', { class: 'share-row' }, cToken, h('button', { class: 'btn', onclick: startComments }, 'Importer les commentaires')),
+    h('label', { class: 'check overwrite' }, cBlocks, h('span', {}, 'Aussi les commentaires attachés aux blocs (discussions en ligne) — nettement plus long : une requête par bloc de texte.')),
     h('h3', {}, '2. Import du ZIP d’export Notion (Markdown & CSV)'),
     h('p', { class: 'muted' }, 'Sans jeton : Notion → Paramètres → Exporter tout le contenu → « Markdown & CSV » (incluez les sous-pages). Plus simple mais moins fidèle : l’export Notion lui-même perd les types exacts de propriétés, les couleurs, les mentions et les vues.'),
     h('div', { class: 'share-row' }, zip, h('button', { class: 'btn', onclick: async () => { if (!zip.files[0]) return; try { const { id } = await api.importZip(zip.files[0]); await follow(id); } catch (e) { toast(e.message, 'error'); } } }, 'Importer le ZIP')),
@@ -1342,31 +1417,55 @@ async function tabBackup(p) {
 const fmtDur = (sec) => { sec = Math.round(sec || 0); if (sec < 60) return `${sec} s`; const m = Math.floor(sec / 60); if (m < 60) return `${m} min ${String(sec % 60).padStart(2, '0')} s`; return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`; };
 const fmtDT = (t) => new Date(t).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 async function tabActivity(p) {
-  let kind = '', days = 30;
-  const draw = async () => {
-    const q = `?days=${days}${kind ? `&kind=${kind}` : ''}`;
-    const [sessions, log, vis] = await Promise.all([api.get('/api/admin/activity/sessions'), api.get('/api/admin/activity/log'), api.get(`/api/admin/activity/visits${q}`)]);
+  let kind = '', days = 30, q = '', lkind = '';
+  const place = (r) => [r.ip, r.geo].filter(Boolean).join(' · ');
+  const draw = async (focusSearch) => {
+    const qs = `days=${days}${q ? `&q=${encodeURIComponent(q)}` : ''}`;
+    const [sessions, log, vis] = await Promise.all([api.get('/api/admin/activity/sessions'), api.get(`/api/admin/activity/log?${qs}${lkind ? `&kind=${lkind}` : ''}`), api.get(`/api/admin/activity/visits?${qs}${kind ? `&kind=${kind}` : ''}`)]);
     const sel = (opts, cur, fn) => h('select', { class: 'input', onchange: (e) => fn(e.target.value) }, opts.map(([v, l]) => h('option', { value: v, selected: String(v) === String(cur) }, l)));
-    const who = (v) => v.actor === 'link' ? h('span', {}, h('span', { class: 'rel-tag' }, 'Lien public'), ` ${v.ip || ''}`) : (v.user_name || v.user_email || 'Compte');
     const KIND = { login: 'Connexion', login_fail: 'Échec de connexion', logout: 'Déconnexion', register: 'Création de compte' };
+    const acct = (id, label) => id ? h('a', { class: 'link-who', title: 'Voir les pages consultées par ce compte', onclick: () => accountDialog(id) }, label) : label;
+    const who = (v) => v.actor === 'link' ? h('span', {}, h('span', { class: 'rel-tag' }, 'Lien public'), ` ${v.ip || ''}`) : acct(v.user_id, v.user_name || v.user_email || 'Compte');
+    const search = h('input', { class: 'input', type: 'search', placeholder: 'Rechercher : IP, compte, e-mail, page, appareil, ville, pays…', value: q, oninput: (e) => { clearTimeout(search._t); search._t = setTimeout(() => { q = e.target.value.trim(); draw(true); }, 300); } });
     p.replaceChildren(
+      h('div', { class: 'act-search' }, search, sel([[7, '7 jours'], [30, '30 jours'], [90, '90 jours'], [365, '1 an']], days, (v) => { days = Number(v); draw(); }),
+        h('span', { class: 'muted small' }, 'La recherche s’applique au journal et aux consultations ci-dessous. Localisation estimée par IP (base hors-ligne).')),
       section('Appareils connectés', 'Les sessions ouvertes (connexion de 90 jours si « Rester connecté » est coché, 30 jours sinon ; chaque visite la renouvelle). Retirer un appareil le déconnecte immédiatement.',
-        h('table', { class: 'plain' }, h('tbody', {}, sessions.map((s) => h('tr', {}, h('td', {}, s.name || s.email, s.current ? h('span', { class: 'rel-tag' }, 'cet appareil') : null), h('td', {}, s.device), h('td', { class: 'muted small' }, s.ip || ''),
+        h('table', { class: 'plain' }, h('tbody', {}, sessions.map((s) => h('tr', {}, h('td', {}, acct(s.user_id, s.name || s.email), s.current ? h('span', { class: 'rel-tag' }, 'cet appareil') : null), h('td', {}, s.device), h('td', { class: 'muted small' }, place(s)),
           h('td', { class: 'muted small' }, 'actif ', fmtDT(s.last_seen || s.created_at)), h('td', { class: 'muted small' }, 'valide jusqu’au ', new Date(s.expires_at).toLocaleDateString('fr-FR')),
           h('td', {}, s.current ? null : h('button', { class: 'btn small danger', onclick: async () => { await api.del(`/api/admin/activity/sessions/${s.id}`); draw(); } }, 'Déconnecter'))))))),
       section('Consultations des pages', 'Temps passé par page (page visible et utilisateur actif, mesuré toutes les 30 s), pour les comptes et pour les liens publics sans compte. Conservé 1 an.',
-        h('div', { class: 'row-end', style: 'justify-content:flex-start;gap:8px' }, sel([['', 'Comptes et liens publics'], ['link', 'Liens publics seulement'], ['user', 'Comptes seulement']], kind, (v) => { kind = v; draw(); }),
-          sel([[7, '7 jours'], [30, '30 jours'], [90, '90 jours'], [365, '1 an']], days, (v) => { days = Number(v); draw(); })),
+        h('div', { class: 'row-end', style: 'justify-content:flex-start;gap:8px' }, sel([['', 'Comptes et liens publics'], ['link', 'Liens publics seulement'], ['user', 'Comptes seulement']], kind, (v) => { kind = v; draw(); })),
         vis.pages.length ? h('table', { class: 'plain' }, h('thead', {}, h('tr', {}, ['Page', 'Consultations', 'Visiteurs', 'Temps total', 'Dernière'].map((x) => h('th', {}, x)))),
           h('tbody', {}, vis.pages.map((r) => h('tr', {}, h('td', {}, h('a', { href: `#/page/${r.page_id}` }, prettify(r.page_title) || 'Sans titre'), r.link_visits ? h('span', { class: 'rel-tag' }, `${r.link_visits} via lien`) : null),
             h('td', {}, r.visits), h('td', {}, r.visitors), h('td', {}, fmtDur(r.seconds)), h('td', { class: 'muted small' }, fmtDT(r.last_seen)))))) : h('p', { class: 'muted' }, 'Aucune consultation sur la période.'),
-        vis.visits.length ? h('details', { class: 'limits' }, h('summary', {}, `Dernières consultations (${vis.visits.length})`), h('table', { class: 'plain' }, h('tbody', {}, vis.visits.map((v) => h('tr', {},
-          h('td', { class: 'muted small' }, fmtDT(v.started_at)), h('td', {}, who(v)), h('td', {}, prettify(v.page_title) || 'Sans titre'), h('td', {}, fmtDur(v.seconds)), h('td', { class: 'muted small' }, v.device)))))) : null),
-      section('Journal des connexions', 'Connexions, échecs de mot de passe et déconnexions (200 dernières).',
-        h('details', { class: 'limits' }, h('summary', {}, 'Afficher le journal'), h('table', { class: 'plain' }, h('tbody', {}, log.map((l) => h('tr', {},
-          h('td', { class: 'muted small' }, fmtDT(l.at)), h('td', {}, KIND[l.kind] || l.kind), h('td', {}, l.email || '—'), h('td', { class: 'muted small' }, l.ip || ''), h('td', { class: 'muted small' }, l.device))))))));
+        vis.visits.length ? h('details', { class: 'limits', open: !!q }, h('summary', {}, `Dernières consultations (${vis.visits.length})`), h('table', { class: 'plain' }, h('tbody', {}, vis.visits.map((v) => h('tr', {},
+          h('td', { class: 'muted small' }, fmtDT(v.started_at)), h('td', {}, who(v)), h('td', {}, prettify(v.page_title) || 'Sans titre'), h('td', {}, fmtDur(v.seconds)), h('td', { class: 'muted small' }, place(v)), h('td', { class: 'muted small' }, v.device)))))) : null),
+      section('Journal des connexions', 'Connexions, échecs de mot de passe et déconnexions (500 dernières correspondant à la recherche).',
+        h('div', { class: 'row-end', style: 'justify-content:flex-start;gap:8px' }, sel([['', 'Tous les événements'], ['login', 'Connexions'], ['login_fail', 'Échecs de connexion'], ['logout', 'Déconnexions'], ['register', 'Créations de compte']], lkind, (v) => { lkind = v; draw(); })),
+        h('details', { class: 'limits', open: !!q || !!lkind }, h('summary', {}, `Afficher le journal (${log.length})`), h('table', { class: 'plain' }, h('tbody', {}, log.map((l) => h('tr', {},
+          h('td', { class: 'muted small' }, fmtDT(l.at)), h('td', {}, KIND[l.kind] || l.kind), h('td', {}, acct(l.user_id, l.email || '—')), h('td', { class: 'muted small' }, place(l)), h('td', { class: 'muted small' }, l.device))))))));
+    if (focusSearch) { const el = p.querySelector('.act-search input'); el?.focus(); el?.setSelectionRange(el.value.length, el.value.length); }
   };
   await draw();
+}
+
+/** Fiche d'un compte : pages consultées, dernières connexions. */
+async function accountDialog(userId) {
+  const body = h('div', { class: 'stats' });
+  const m = modal('Compte', body, { wide: true });
+  try {
+    const a = await api.get(`/api/admin/activity/account/${userId}?days=90`);
+    const place = (r) => [r.ip, r.geo].filter(Boolean).join(' · '), KIND = { login: 'Connexion', login_fail: 'Échec', logout: 'Déconnexion', register: 'Création' };
+    body.replaceChildren(
+      h('h3', {}, a.user.name || a.user.email, h('span', { class: 'rel-tag' }, a.user.role === 'admin' ? 'Admin' : 'Membre')),
+      h('p', { class: 'muted' }, `${a.user.email} · compte créé le ${new Date(a.user.created_at).toLocaleDateString('fr-FR')} · 90 derniers jours : ${a.visits} consultation(s), ${fmtDur(a.seconds)}`),
+      h('h4', {}, 'Pages consultées'),
+      a.pages.length ? h('table', { class: 'plain' }, h('thead', {}, h('tr', {}, ['Page', 'Consultations', 'Temps', 'Dernière'].map((x) => h('th', {}, x)))), h('tbody', {}, a.pages.map((r) => h('tr', {},
+        h('td', {}, h('a', { href: `#/page/${r.page_id}`, onclick: () => m.close() }, prettify(r.page_title) || 'Page supprimée'), ), h('td', {}, r.visits), h('td', {}, fmtDur(r.seconds)), h('td', { class: 'muted small' }, fmtDT(r.last_seen)))))) : h('p', { class: 'muted' }, 'Aucune page consultée sur la période.'),
+      h('h4', {}, 'Dernières connexions'),
+      a.log.length ? h('table', { class: 'plain' }, h('tbody', {}, a.log.slice(0, 30).map((l) => h('tr', {}, h('td', { class: 'muted small' }, fmtDT(l.at)), h('td', {}, KIND[l.kind] || l.kind), h('td', { class: 'muted small' }, place(l)), h('td', { class: 'muted small' }, l.device))))) : h('p', { class: 'muted' }, 'Aucune connexion enregistrée.'));
+  } catch (e) { m.close?.(); toast(e.message, 'error'); }
 }
 
 async function tabUsers(p) {

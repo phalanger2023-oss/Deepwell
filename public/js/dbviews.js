@@ -144,6 +144,14 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     const vals = {}, fields = h('div', { class: 'create-form' });
     const title = h('textarea', { class: 'input create-title', rows: 2, placeholder: 'Titre', spellcheck: 'true', lang: 'fr', 'aria-label': 'Titre' });
     fields.append(h('label', { class: 'create-field' }, h('span', { class: 'muted small' }, 'Titre'), title));
+    let tplSel = null; // modèle choisi (propriétés et contenu copiés, vos valeurs ci-dessous restent prioritaires)
+    const tplBox = h('div', { class: 'create-field', hidden: true }, h('span', { class: 'muted small' }, 'Modèle'));
+    api.get(`/api/pages/${page.id}/templates`).then((tpls) => {
+      if (!tpls.length) return;
+      const sel = h('select', { class: 'input', 'aria-label': 'Modèle', onchange: (e) => { tplSel = tpls.find((t) => t.id === e.target.value) || null; } }, h('option', { value: '' }, 'Aucun (ligne vide)'), tpls.map((t) => h('option', { value: t.id, selected: page.props?.dw_default_template === t.id && !tplSel && (tplSel = t) }, t.title || 'Sans titre')));
+      tplBox.append(sel); tplBox.hidden = false;
+    }).catch(() => {});
+    fields.append(tplBox);
     const skip = new Set([tk]);
     for (const k of allProps.filter((c) => !skip.has(c) && schema[c] && EDITABLE.includes(schema[c].type) && schema[c].type !== 'unique_id')) {
       const ed = propEditor(schema[k], null, true, (np) => { vals[k] = np; });
@@ -152,7 +160,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     fields.querySelectorAll('input:not([type=checkbox]):not([type=number]):not([type=date]), textarea, [contenteditable="true"]').forEach((el) => { el.setAttribute('spellcheck', 'true'); el.setAttribute('lang', 'fr'); });
     const go = h('button', { class: 'btn primary', onclick: async () => {
       go.disabled = true;
-      try { const r = await createRow(title.value.trim(), { ...vals }); m.close(); if (view().type === 'table') draw(); else open(r); }
+      try { const r = tplSel ? await createFromTemplate(tplSel, { title: title.value.trim() || undefined, props: { ...vals }, stay: true }) : await createRow(title.value.trim(), { ...vals }); m.close(); if (view().type === 'table') draw(); else open(r); }
       catch (e) { toast(e.message, 'error'); go.disabled = false; }
     } }, 'Créer');
     const m = modal('Nouvelle ligne avec propriétés', h('div', {}, fields, h('div', { class: 'row-end' }, h('button', { class: 'btn', onclick: () => m.close() }, 'Annuler'), go)), { wide: true });
@@ -182,7 +190,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
     if (stay) return row;
     draw(); open(row);
   }
-  const openTemplates = async (anchor) => { try { (await import('./templates.js')).openTemplateMenu(anchor, { page, onPick: (t) => createFromTemplate(t).catch((e) => toast(e.message, 'error')) }); } catch (e) { toast(e.message, 'error'); } };
+  const openTemplates = async (anchor) => { try { (await import('./templates.js')).openTemplateMenu(anchor, { page, rows, onPick: (t) => createFromTemplate(t).catch((e) => toast(e.message, 'error')) }); } catch (e) { toast(e.message, 'error'); } };
   // Valeurs par défaut : chaque nouvelle ligne (bouton, Kanban, calendrier, bouton d'automatisation) les reçoit ; une colonne du Kanban ou un modèle les remplace.
   const DEF_TYPES = ['select', 'status', 'multi_select', 'checkbox', 'number', 'rich_text', 'url', 'email', 'phone_number'];
   const defCandidates = () => allProps.filter((p) => p !== tk && DEF_TYPES.includes(schema[p].type));
@@ -245,6 +253,7 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
         const n = await ask('Renommer', 'Titre', r.title || ''); if (n === null || !n.trim() || n.trim() === r.title) return;
         await commitRow(r, tk, { type: 'title', title: plainRt(n.trim()) }); draw();
       } } : null,
+      editable ? { label: 'Enregistrer comme modèle', icon: 'copy', fn: async () => { try { await (await import('./templates.js')).templateFromRow(page, r); } catch (err) { toast(err.message, 'error'); } } } : null,
       editable ? 'sep' : null,
       editable && !r.locked ? (own ? { label: 'Modifier le code ou la durée…', icon: 'lock', fn: () => lock('edit') } : { label: 'Rendre privée (verrouiller avec un code)…', icon: 'lock', fn: () => lock('set') }) : null,
       editable && !r.locked && own ? { label: 'Retirer le verrou…', icon: 'lock-open', fn: () => lock('remove') } : null,
@@ -282,6 +291,33 @@ export function renderDatabase(host, { page, rows, role, onChange }) {
   function drawBody() {
     const v = view(); body.replaceChildren();
     ({ table: drawTable, board: drawBoard, calendar: drawCalendar, gallery: drawGallery, list: drawList }[v.type] || drawTable)(body, v, ctx);
+    if (restoredFor !== activeId) { restoredFor = activeId; restorePos(); } // 1re fois qu'on affiche cette vue : on retrouve où on en était
+  }
+
+  // ---------- position dans la vue (défilement) : retenue par base et par vue, retrouvée après avoir changé de page ----------
+  let restoredFor = null, restoring = false, saveT = 0, scrollHooked = false;
+  const posKey = () => `dw_pos_${page.id}_${activeId}`;
+  const pageSc = () => host.closest('.scroll') || document.scrollingElement;
+  function savePos() {
+    if (restoring || !host.isConnected) return;
+    const x = [...host.querySelectorAll('.kb-board, .db-scroll')].map((e) => Math.round(e.scrollLeft)), cols = [...host.querySelectorAll('.kb-cards')].map((e) => Math.round(e.scrollTop)), y = Math.round(pageSc()?.scrollTop || 0);
+    try { if (x.some(Boolean) || cols.some(Boolean) || y) localStorage.setItem(posKey(), JSON.stringify({ x, cols, y })); else localStorage.removeItem(posKey()); } catch { /* stockage plein ou refusé */ }
+  }
+  function restorePos() {
+    let p = null; try { p = JSON.parse(localStorage.getItem(posKey()) || 'null'); } catch { /* ignoré */ }
+    if (!scrollHooked) { // un seul jeu d'écouteurs par affichage de la base
+      scrollHooked = true; const later = () => { clearTimeout(saveT); saveT = setTimeout(savePos, 150); };
+      host.addEventListener('scroll', later, true); pageSc()?.addEventListener('scroll', later, { passive: true });
+    }
+    if (!p) return;
+    restoring = true; let n = 0;
+    const apply = () => {
+      [...host.querySelectorAll('.kb-board, .db-scroll')].forEach((e, i) => { if (p.x?.[i]) e.scrollLeft = p.x[i]; });
+      [...host.querySelectorAll('.kb-cards')].forEach((e, i) => { if (p.cols?.[i]) e.scrollTop = p.cols[i]; });
+      if (p.y && pageSc()) pageSc().scrollTop = p.y;
+      if (++n < 8) requestAnimationFrame(apply); else restoring = false; // les cartes et images arrivent en plusieurs temps : quelques tentatives
+    };
+    requestAnimationFrame(apply);
   }
 
   // contrôles propres à chaque vue (regroupement, propriété date, tri, propriétés visibles)

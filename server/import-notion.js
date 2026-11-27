@@ -331,3 +331,65 @@ async function runImport(job, userId, token) {
   });
   log(`Terminé : ${job.counts.pages} pages, ${job.counts.databases} bases, ${job.counts.blocks} blocs, ${job.counts.files} fichiers.`);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Commentaires Notion seuls : on les (re)lit pour les pages DÉJÀ importées, sans rien réimporter d'autre.
+// L'API Notion ne renvoie que les commentaires non résolus, et uniquement quand on interroge la page ou le bloc visé :
+//   - commentaires de page : 1 requête par page ;
+//   - commentaires de blocs (discussions en ligne) : 1 requête par bloc de texte → plus long, donc optionnel.
+// Idempotent : un commentaire déjà présent (même identifiant Notion) n'est jamais dupliqué ni modifié.
+// Les fils (discussion_id) sont reconstruits : le premier commentaire est la racine, les suivants des réponses.
+// ---------------------------------------------------------------------------------------------
+const COMMENTABLE = ['paragraph', 'heading_1', 'heading_2', 'heading_3', 'bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'quote', 'callout', 'code', 'image', 'file', 'pdf', 'video', 'bookmark', 'embed', 'equation', 'table'];
+
+export function startNotionComments(userId, token, opts = {}) {
+  const job = { id: uid(), kind: 'notion-comments', status: 'running', startedAt: now(), log: [], counts: { pages: 0, blocks: 0, comments: 0, replies: 0, skipped: 0, warnings: 0, files: 0, databases: 0, unsupported: 0, missing: 0 }, progress: { done: 0, total: 0 } };
+  jobs.set(job.id, job);
+  runComments(job, userId, token, !!opts.blocks).then(
+    () => { job.status = 'done'; job.log.push('Import des commentaires terminé.'); },
+    (e) => { job.status = 'error'; job.error = e.message; job.log.push(`Erreur : ${e.message}`); },
+  );
+  return job;
+}
+
+async function runComments(job, userId, token, withBlocks) {
+  const n = new Notion(token), log = (m) => job.log.push(m);
+  const pages = db.prepare("SELECT id,notion_id,title FROM pages WHERE owner_id=? AND notion_id IS NOT NULL AND archived=0 ORDER BY created_at").all(userId);
+  if (!pages.length) throw new Error("Aucune page importée de Notion : lancez d'abord l'import complet.");
+  const targets = []; // { page, blockId|null, notionId }
+  for (const p of pages) {
+    targets.push({ page: p.id, title: p.title, block: null, notion: p.notion_id });
+    if (withBlocks) for (const b of db.prepare(`SELECT id,notion_id FROM blocks WHERE page_id=? AND notion_id IS NOT NULL AND type IN (${COMMENTABLE.map(() => '?').join(',')})`).all(p.id, ...COMMENTABLE)) targets.push({ page: p.id, title: p.title, block: b.id, notion: b.notion_id });
+  }
+  job.progress.total = targets.length;
+  log(`${pages.length} page(s) à lire${withBlocks ? `, ${targets.length - pages.length} bloc(s) de texte compris` : ''}.`);
+  const findByNotion = db.prepare('SELECT id FROM comments WHERE page_id=? AND notion_id=?');
+  const ins = db.prepare('INSERT INTO comments(id,page_id,block_id,parent_id,author_id,author_name,body,quote,resolved,notion_id,created_at,updated_at) VALUES(?,?,?,?,NULL,?,?,\'\',0,?,?,?)');
+  let denied = 0;
+  for (const t of targets) {
+    job.progress.done++;
+    let list = [];
+    try { for await (const c of n.paginate(`/comments?block_id=${t.notion}`)) list.push(c); }
+    catch (e) {
+      if (e.status === 403 && /comment/i.test(e.message)) { throw new Error("L'intégration Notion n'a pas la capacité « Lire les commentaires » : activez-la sur notion.so/my-integrations puis relancez."); }
+      if (e.status === 404 || e.status === 403) { if (!t.block && ++denied <= 5) { job.counts.warnings++; log(`« ${t.title || 'Sans titre'} » : page inaccessible à l'intégration.`); } continue; }
+      job.counts.warnings++; log(`« ${t.title || 'Sans titre'} » : ${e.message}`); continue;
+    }
+    if (!list.length) continue;
+    t.block ? job.counts.blocks++ : job.counts.pages++;
+    const roots = new Map(); // discussion_id -> id local du premier commentaire du fil
+    tx(() => {
+      for (const c of list) {
+        const had = findByNotion.get(t.page, c.id);
+        const disc = c.discussion_id || c.id;
+        if (had) { job.counts.skipped++; if (!roots.has(disc)) roots.set(disc, had.id); continue; }
+        const id = uid(), parent = roots.get(disc) || null;
+        if (!parent) roots.set(disc, id);
+        const t0 = Date.parse(c.created_time) || now();
+        ins.run(id, t.page, t.block, parent, c.created_by?.name || 'Notion', plain(c.rich_text) || '(commentaire vide)', c.id, t0, Date.parse(c.last_edited_time) || t0);
+        parent ? job.counts.replies++ : job.counts.comments++;
+      }
+    });
+  }
+  log(`${job.counts.comments} commentaire(s) et ${job.counts.replies} réponse(s) ajouté(s), ${job.counts.skipped} déjà présent(s).`);
+}
